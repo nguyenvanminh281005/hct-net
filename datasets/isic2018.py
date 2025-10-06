@@ -84,6 +84,8 @@ class ISIC2018Segmentation(Dataset):
         self.data_list = []
         self.gt_list = []
         self.img_ids=[]
+        # Filter only .jpg files before sorting
+        self.filenames = [f for f in self.filenames if f.endswith('.jpg')]
         self.filenames=sorted(self.filenames,key=lambda x: int(x.split('_')[-1][:-len('.jpg')]))
         for filename in self.filenames:
             ext = os.path.splitext(filename)[-1]

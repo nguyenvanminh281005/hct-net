@@ -6,8 +6,11 @@ import sys
 import math
 import torch.nn.init as init
 from torch.autograd import Variable
+import os
 
-sys.path.append('../')
+# Add the project root to sys.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
 from hct_net.cell import Cell
 from hct_net.genotypes import *
 from hct_net.operations import *
@@ -448,13 +451,16 @@ class hybridCnnTrans(nn.Module):
         x_posemb_2 = []
         masks_2 = []
         x_fea_2.append(self.cell_2_2_f)
-        x_posemb_1.append(self.position_embed_2(self.cell_2_2_f))
-        masks_1.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool).cuda())
+        x_posemb_2.append(self.position_embed_2(self.cell_2_2_f))
+        masks_2.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool).cuda())
         #print("*******masks*****",masks.shape)
         x_trans_2 = self.encoder_Detrans_2(x_fea_2, masks_2, x_posemb_2) #[4,16384,64]
         #print("###x_trans_0####",x_trans_0.shape)
         #self.cell_0 = self.transposeconv_stage2(x_trans_0[:, :512, :].transpose(-1, -2).view(self.stem1_f.shape))
-        self.cell_2 = x_trans_2[:, :262144, :].transpose(-1, -2).view(self.cell_2_2_f) #[4,64,128,128]
+        if x_trans_2 is not None:
+            self.cell_2 = x_trans_2[:, :262144, :].transpose(-1, -2).view(self.cell_2_2_f.shape) #[4,64,128,128]
+        else:
+            self.cell_2 = self.cell_2_2_f  # Fallback to original feature if transformer fails
         #print("###self.cell_2##",self.cell_2.shape)
 
         # layer 3

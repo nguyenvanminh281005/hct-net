@@ -12,10 +12,11 @@ from tensorboardX import SummaryWriter
 import torch.utils.data as data
 import torch.nn.functional as F
 
-from genotypes import CellLinkDownPos, CellLinkUpPos, CellPos
-from nas_model import get_models
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-sys.path.append('../')
+from hct_net.genotypes import CellLinkDownPos, CellLinkUpPos, CellPos
+from hct_net.nas_model import get_models
 from datasets import get_dataloder, datasets_dict
 from utils import save_checkpoint, calc_parameters_count, get_logger, get_gpus_memory_info
 from utils import BinaryIndicatorsMetric, AverageMeter
@@ -180,7 +181,7 @@ def main(args):
     #################################### train and val ########################
     start_epoch = 0
 
-    if args.resume is not None:
+    if args.resume is not None and args.resume != 'None':
         if os.path.isfile(args.resume):
             logger.info("Loading model and optimizer from checkpoint '{}'".format(args.resume))
             checkpoint = torch.load(args.resume, map_location=args.device)
@@ -441,14 +442,14 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='isic2018',
                         help='Model to train and evaluation')
     parser.add_argument('--dataset_root', type=str,
-                        default='/content/drive/MyDrive/Dataset/Mixsearch/ISIC2018/Task1_apply',
+                        default='D:/KHTN2023/research25/HCT-Net/datasets',
                         help='Model to train and evaluation')
     parser.add_argument('--base_size', type=int, default=256, help="resize base size")
     parser.add_argument('--crop_size', type=int, default=256, help="crop  size")
-    parser.add_argument('--epochs', type=int, default=60, help="search epochs")
-    parser.add_argument('--train_batch', type=int, default=4, help="train_batch")
-    parser.add_argument('--val_batch', type=int, default=4, help="val_batch ")
-    parser.add_argument('--num_workers', type=int, default=4, help="dataloader numworkers")
+    parser.add_argument('--epochs', type=int, default=5, help="search epochs")
+    parser.add_argument('--train_batch', type=int, default=1, help="train_batch")
+    parser.add_argument('--val_batch', type=int, default=2, help="val_batch ")
+    parser.add_argument('--num_workers', type=int, default=2, help="dataloader numworkers")
     parser.add_argument('--train_portion', type=float, default=0.5, help="dataloader numworkers")
 
     # search network setting
@@ -489,7 +490,7 @@ if __name__ == '__main__':
     parser.add_argument('--arch_weight_decay', type=float, default=0, help=" for arch parameters lr ")
     parser.add_argument('--momentum', type=float, default=0.9, help=" momentum  ")
     # resume
-    parser.add_argument('--resume', type=str, default='/content/drive/MyDrive/MIxSearch12.31_dynamic_transformer/nas_search/search_exp/Nas_Search_Unet/isic2018/20220413-093911__/DSNAS/checkpoint.pth.tar', help=" resume file path")
+    parser.add_argument('--resume', type=str, default='D:/KHTN2023/research25/HCT-Net/MIxSearch12.31_dynamic_transformer/nas_search/search_exp/Nas_Search_Unet/isic2018/20220413-093911__/DSNAS/checkpoint.pth.tar', help=" resume file path")
     #DSNAS
     parser.add_argument('--early_fix_arch', action='store_true', default=True, help='bn affine flag')
     parser.add_argument('--gen_max_child', action='store_true', default=True,help='generate child network by argmax(alpha)')

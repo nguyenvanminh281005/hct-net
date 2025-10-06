@@ -1,7 +1,12 @@
 from operations import *
+import os
+import sys
+# Add the parent directory to sys.path to enable imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from hct_net.nas_model.DeTrans.position_encoding import build_position_encoding
-from hct_net.nas_model.DeTrans.DeformableTrans import DeformableTransformer
+
+from nas_model.Kp_Trans.position_encoding import build_position_encoding
+from nas_model.Kp_Trans.DeformableTrans import DeformableTransformer
 
 class Identity(nn.Module):
     def __init__(self):

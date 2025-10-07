@@ -35,14 +35,11 @@ CellPos = [
 
 ISIC_414 = Genotype(normal_down=[('avg_pool', 1), ('identity', 0), ('dep_conv', 0), ('down_conv', 1), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 0), ('shuffle_conv', 1), ('conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_normal_concat=range(2, 6))
 
-
-
 promise_1 = Genotype(normal_down=[('cweight', 0), ('max_pool', 1), ('cweight', 0), ('down_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('Dynamic_convOPS', 1)], normal_normal_concat=range(2, 6))
 
 ISIC_1 = Genotype(normal_down=[('Dynamic_convOPS', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_down_concat=range(2, 6), normal_up=[('Dynamic_convOPS', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_up_concat=range(2, 6), normal_normal=[('Dynamic_convOPS', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('dil_conv', 1), ('shuffle_conv', 4)], normal_normal_concat=range(2, 6))
 
 transformer_312_final = Genotype(normal_down=[('dil_conv', 0), ('down_conv', 1), ('conv', 0), ('down_dil_conv', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('dil_conv', 0), ('conv', 0), ('up_cweight', 1), ('up_conv', 1), ('dil_conv', 3), ('shuffle_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('dil_conv', 0), ('conv', 0), ('Dynamic_convOPS', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
-
 
 transformer313=Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
 #transformer
@@ -86,13 +83,8 @@ stage1_deep = Genotype(normal_down=[('down_dil_conv', 1), ('dil_conv', 0), ('dow
 stage1_double = Genotype(normal_down=[('down_cweight', 1), ('cweight', 0), ('down_conv', 1), ('dep_conv', 2), ('down_dil_conv', 1), ('shuffle_conv', 0), ('down_cweight', 1), ('dil_conv', 2)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('dep_conv', 2), ('up_dil_conv', 1), ('up_dil_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('dil_conv', 0)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('cweight', 0), ('identity', 1), ('dep_conv', 2), ('shuffle_conv', 0), ('conv', 3), ('dil_conv', 2), ('identity', 1)], normal_normal_concat=range(2, 6))
 #
 
-
 #chaos test
 nodouble_deep_init32_ep100=genotype = Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('max_pool', 1), ('dil_conv', 2), ('max_pool', 1), ('identity', 3), ('max_pool', 1), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dep_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('up_conv', 1), ('identity', 3), ('cweight', 2), ('up_dep_conv', 1), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('identity', 1), ('dil_conv', 2), ('dil_conv', 1), ('identity', 3), ('cweight', 2), ('conv', 3), ('dil_conv', 2)], normal_normal_concat=range(2, 6))
-
-
-
-
 
 # chaos datasets
 nodouble_deep_init32_ep100=genotype = Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('max_pool', 1), ('dil_conv', 2), ('max_pool', 1), ('identity', 3), ('max_pool', 1), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dep_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('up_conv', 1), ('identity', 3), ('cweight', 2), ('up_dep_conv', 1), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('identity', 1), ('dil_conv', 2), ('dil_conv', 1), ('identity', 3), ('cweight', 2), ('conv', 3), ('dil_conv', 2)], normal_normal_concat=range(2, 6))
@@ -102,13 +94,10 @@ stage1_nodouble_deep_ep36=Genotype(normal_down=[('max_pool', 1), ('dil_conv', 0)
 # seatch acc 0.848
 stage1_nodouble_deep_ep63=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('down_dep_conv', 1), ('identity', 0), ('conv', 0), ('down_conv', 1), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2,6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('up_dep_conv', 1), ('identity', 0), ('conv', 0), ('up_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('dil_conv', 0), ('identity', 0), ('identity', 1), ('conv', 0), ('identity', 1), ('identity', 0), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
 
-
 stage1_nodouble_deep_ep83=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('identity', 0), ('down_dep_conv', 1), ('down_cweight', 1), ('conv', 0), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2, 6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('identity', 0), ('up_dep_conv', 1), ('up_conv', 1), ('conv', 0), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('dil_conv', 0), ('identity', 1), ('identity', 0), ('identity', 1), ('conv', 0), ('identity', 0), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
-
 
 # 0.854
 stage1_nodouble_deep_150awb= Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('identity', 0), ('down_dep_conv', 1), ('dil_conv', 0), ('down_cweight', 1), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2, 6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('identity', 0), ('up_dep_conv', 1), ('dil_conv', 0), ('up_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv',1), ('dil_conv', 0), ('identity', 1), ('identity', 0), ('dil_conv', 0), ('shuffle_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_normal_concat=range(2, 6))
-
 
 stage1_double_deep_ep80= Genotype(normal_down=[('dil_conv', 0), ('avg_pool', 1), ('identity', 0), ('avg_pool', 1), ('avg_pool', 1), ('cweight', 2), ('avg_pool', 1), ('identity', 4)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_cweight', 1), ('identity', 0), ('up_cweight', 1), ('cweight', 2), ('cweight', 3), ('identity', 4), ('dil_conv', 0)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('identity', 0),('identity', 0), ('cweight', 2), ('cweight', 2), ('cweight', 3), ('cweight', 1), ('identity', 4)], normal_normal_concat=range(2, 6))
 
@@ -224,9 +213,6 @@ alpha1_layer9cellskip_double_deep_ep80_mixup=Genotype(normal_down=[('identity', 
 
 #ValAcc:0.9596  ValDice:0.8708 ValJc:0.7773
 alpha1_layer9scale_double_deep_ep80_mixup=Genotype(normal_down=[('conv', 0), ('max_pool', 1), ('cweight', 0), ('down_cweight', 1), ('cweight', 0), ('down_dep_conv', 1), ('identity', 0), ('max_pool', 1)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('conv', 0), ('up_cweight', 1), ('cweight', 0), ('up_cweight', 1), ('cweight', 0), ('up_cweight', 1), ('identity', 0)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('conv', 0), ('cweight', 1), ('cweight', 0), ('cweight', 0), ('cweight', 1), ('identity', 0), ('identity', 1)], normal_normal_concat=range(2, 6))
-
-
-
 
 #ISIC2017 alpha=0.5
 alphaShare_dd_ep80_isic17_2mixup = Genotype(normal_down=[('max_pool', 1), ('cweight', 0), ('dep_conv', 2), ('avg_pool', 1), ('down_dep_conv', 1), ('cweight', 0), ('shuffle_conv', 2), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('cweight', 0), ('up_dep_conv', 1), ('dep_conv', 2), ('up_dep_conv', 1), ('cweight', 0), ('up_cweight', 1), ('shuffle_conv', 2), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('cweight', 0), ('dep_conv', 2), ('cweight', 1), ('cweight', 0), ('dep_conv', 2), ('shuffle_conv', 2), ('dep_conv', 3)], normal_normal_concat=range(2, 6))

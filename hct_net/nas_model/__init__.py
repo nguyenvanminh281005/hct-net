@@ -39,7 +39,7 @@ def init_weights(net, init_type='kaiming', gain=0.02):
     net.apply(init_func)
 
 
-def get_models(args,switches_normal,switches_down,switches_up,early_fix_arch,gen_max_child_flag,random_sample,):
+def get_models(args,switches_normal,switches_down,switches_up,switches_transformer,early_fix_arch,gen_max_child_flag,random_sample,):
 
     '''get the correct model '''
     model_name=args.model
@@ -48,7 +48,7 @@ def get_models(args,switches_normal,switches_down,switches_up,early_fix_arch,gen
         model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
                     meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
                  use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
+                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
         #3 16 1 4 7 0 true store_true
 
     elif model_name=="UnetLayer9":
@@ -56,13 +56,13 @@ def get_models(args,switches_normal,switches_down,switches_up,early_fix_arch,gen
         model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
                     meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
                  use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
+                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
     elif model_name=='UnetLayer9_v2':
         assert args.layers==9
         model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
                     meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
                  use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
+                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
     else:
         raise  NotImplementedError("the model is not exists !")
     init_weights(model,args.init_weight_type)

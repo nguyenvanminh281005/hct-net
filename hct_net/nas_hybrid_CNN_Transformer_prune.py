@@ -423,14 +423,3 @@ class BuildSinglePthPrune_l7(nn.Module):
         self.ouput_6_0 = F.upsample(self.ouput_6_0, size=(h, w), mode='bilinear', align_corners=True)
 
         return [self.output_2_0,self.ouput_4_0, self.ouput_6_0]
-
-
-
-
-
-
-
-
-
-
-

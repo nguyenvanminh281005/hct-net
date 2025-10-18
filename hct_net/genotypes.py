@@ -4,7 +4,7 @@ import numpy as np
 Genotype = namedtuple('Genotype', 'normal_down normal_down_concat normal_up normal_up_concat normal_normal normal_normal_concat')
 
 CellLinkDownPos = [
-    #'down_Dynamic_convOPS',
+    'down_Dynamic_convOPS',
     'avg_pool',
     'max_pool',
     'down_cweight',
@@ -14,7 +14,7 @@ CellLinkDownPos = [
 ]
 
 CellLinkUpPos = [
-    #'up_Dynamic_convOPS',
+    'up_Dynamic_convOPS',
     'up_cweight',
     'up_dep_conv',
     'up_conv',
@@ -26,11 +26,22 @@ CellPos = [
     'none',
     'Dynamic_convOPS',
     'identity',
-    #'cweight',
+    'cweight',
     'dil_conv',
     'dep_conv',
     'shuffle_conv',
     'conv',
+]
+
+# Transformer layer configurations for searchable NAS
+TransformerLayerConfigs = [
+    1,  # 1 layer
+    2,  # 2 layers  
+    3,  # 3 layers
+    4,  # 4 layers
+    6,  # 6 layers (original)
+    8,  # 8 layers
+    12, # 12 layers
 ]
 
 ISIC_414 = Genotype(normal_down=[('avg_pool', 1), ('identity', 0), ('dep_conv', 0), ('down_conv', 1), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 0), ('shuffle_conv', 1), ('conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_normal_concat=range(2, 6))
@@ -106,11 +117,6 @@ stage1_double_deep_ep80_ts=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1
 # chaos final
 stage0_double_deep_ep80_newim=Genotype(normal_down=[('down_dep_conv', 1), ('identity', 0), ('avg_pool', 1), ('cweight', 0), ('shuffle_conv', 2), ('identity', 0), ('conv', 4), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('cweight', 0), ('up_dep_conv', 1), ('shuffle_conv', 2), ('identity', 0), ('conv', 4), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('identity', 0), ('cweight', 0), ('cweight', 2), ('identity', 1), ('shuffle_conv', 2), ('conv', 4), ('dep_conv', 3)], normal_normal_concat=range(2, 6))
 
-
-
-
-
-
 # isic test 
 # 0.934,0.888,0.808
 stage1_layer9_110epoch_double_deep_final=Genotype(
@@ -121,7 +127,6 @@ stage1_layer9_110epoch_double_deep_final=Genotype(
         normal_normal=[('dep_conv', 1), ('cweight', 0), ('conv', 2), ('shuffle_conv', 0), ('dep_conv', 1), ('shuffle_conv', 3), ('conv', 3), ('dep_conv', 4)],
          normal_normal_concat=range(2, 6))
 
-
 # 0.932,0.885,0.804  final output
 stage1_layer9_110epoch_double_final=Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('shuffle_conv', 0), ('down_cweight', 1), ('shuffle_conv', 3), ('down_conv', 1), ('down_conv', 1), ('conv', 3)],
          normal_down_concat=range(2, 6),
@@ -130,11 +135,8 @@ stage1_layer9_110epoch_double_final=Genotype(normal_down=[('down_dil_conv', 1), 
          normal_normal=[('shuffle_conv', 0), ('dil_conv', 1), ('shuffle_conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 3), ('shuffle_conv', 1), ('conv', 3), ('shuffle_conv', 2)],
          normal_normal_concat=range(2, 6))
 
-
-
 # 0.931 0.889 0.804
 stage1_layer9_110epoch_deep_final=Genotype(normal_down=[('down_conv', 1), ('dep_conv', 0), ('shuffle_conv', 2), ('down_cweight', 1), ('down_cweight', 1), ('identity', 3), ('down_cweight', 1), ('dep_conv', 4)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('dep_conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 0), ('identity', 3), ('up_dil_conv', 1), ('up_conv', 1), ('dep_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 0), ('shuffle_conv', 1), ('shuffle_conv', 2), ('shuffle_conv', 0), ('identity', 3), ('identity', 1), ('identity', 1), ('dep_conv', 4)], normal_normal_concat=range(2, 6))
-
 
 # 0.920 0.874
 stage1_layer9_110epoch_final=Genotype(
@@ -143,7 +145,6 @@ stage1_layer9_110epoch_final=Genotype(
     normal_up=[('conv', 0), ('up_dil_conv', 1), ('shuffle_conv', 2), ('shuffle_conv', 0), ('up_dep_conv', 1), ('cweight', 3), ('conv', 3), ('shuffle_conv', 2)],
     normal_up_concat=range(2, 6),
     normal_normal=[('conv', 1), ('conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 0), ('shuffle_conv', 1), ('cweight', 3), ('conv', 3), ('shuffle_conv', 2)], normal_normal_concat=range(2, 6))
-
 
 
 # mixuo and nomixuo test 

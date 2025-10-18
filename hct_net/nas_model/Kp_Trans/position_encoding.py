@@ -31,7 +31,7 @@ class PositionEmbeddingSine(nn.Module):
             self.num_pos_feats = [N_steps, N_steps + c % 2]
         else:
             self.num_pos_feats = [N_steps, N_steps]'''
-        mask = torch.zeros(bs, h, w, dtype=torch.bool).cuda()
+        mask = torch.zeros(bs, h, w, dtype=torch.bool, device=x.device)
         assert mask is not None
         not_mask = ~mask
         #d_embed = not_mask.cumsum(1, dtype=torch.float32)

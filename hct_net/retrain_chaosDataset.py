@@ -22,12 +22,8 @@ from utils import RefugeIndicatorsMetric,BinaryIndicatorsMetric,AverageMeter
 from utils import BCEDiceLoss,SoftDiceLoss,DiceLoss,BCEDiceLoss
 from utils import MultiClassEntropyDiceLoss
 
-
-
-
 # loss fun and iou/macc/dice fun
 def main(args):
-
 
     #################### init logger ###################################
     log_dir = './logs/' + '{}'.format(args.dataset) + '/{}_{}_{}'.format(args.model,args.note,time.strftime('%Y%m%d-%H%M%S'))

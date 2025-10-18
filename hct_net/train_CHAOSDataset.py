@@ -413,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='chaos',
                         help='Model to train and evaluation')
     parser.add_argument('--dataset_root', type=str,
-                        default='/content/drive/MyDrive/Dataset/Mixsearch/CHAOS_CT',
+                        default='D:/KHTN2023/research25/HCT-Net/datasets/CHAOS/Train_Sets/CT',
                         help='Model to train and evaluation')
     parser.add_argument('--base_size', type=int, default=256, help="resize base size")
     parser.add_argument('--crop_size', type=int, default=256, help="crop  size")

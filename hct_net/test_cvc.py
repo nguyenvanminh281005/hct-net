@@ -75,7 +75,7 @@ def main(args):
             double_down_channel=args.double_down_channel,
             aux=args.aux
         )
-        args.model_path = '/content/drive/MyDrive/MIxSearch12.31_dynamic_transformer/nas_search/logs/chaos/transformer_net0107_1___20220418-063518/model_best.pth.tar'
+        args.model_path = 'D:/KHTN2023/research25/HCT-Net/search_exp/Nas_Search_Unet/isic2018/20251005-205313__/single/model_best.pth.tar'
         model.load_state_dict(torch.load(args.model_path,map_location='cpu')['state_dict'])
 
     else:

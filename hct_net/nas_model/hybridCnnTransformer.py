@@ -21,8 +21,8 @@ from hct_net.nas_model.Kp_Trans.DeformableTrans import DeformableTransformer
 class hybridCnnTrans(nn.Module):
     def __init__(self, input_c=3, c=16, num_classes=1, meta_node_num=4, layers=7, dp=0,
                  use_sharing=True, double_down_channel=True, use_softmax_head=False,
-                 switches_normal=[], switches_down=[], switches_up=[], early_fix_arch=False, gen_max_child_flag=False,
-                 random_sample=False):
+                 switches_normal=[], switches_down=[], switches_up=[], switches_transformer=[],
+                 early_fix_arch=False, gen_max_child_flag=False, random_sample=False):
         super(hybridCnnTrans, self).__init__()
         self.CellLinkDownPos = CellLinkDownPos
         self.CellPos = CellPos
@@ -30,6 +30,7 @@ class hybridCnnTrans(nn.Module):
         self.switches_normal = switches_normal
         self.switches_down = switches_down
         self.switches_up = switches_up
+        self.switches_transformer = switches_transformer
         self.dropout_prob = dp  # 0
         self.input_c = input_c  # 3
         self.num_class = num_classes  # 1
@@ -51,11 +52,11 @@ class hybridCnnTrans(nn.Module):
         self.stem1 = ConvOps(self.c_prev_prev, self.c_prev, kernel_size=3, stride=2, ops_order='weight_norm_act')
 
 
-        '''# transformer
+        # transformer
         self.position_embed = build_position_encoding(mode='v2', hidden_dim=64)
         self.encoder_Detrans = DeformableTransformer(d_model=64, dim_feedforward=256, dropout=0.1, activation='gelu',
                                                      num_feature_levels=1, nhead=4, num_encoder_layers=6,
-                                                     enc_n_points=4)'''
+                                                     enc_n_points=4)
 
         # print("stem0:",self.stem0)
 
@@ -82,11 +83,11 @@ class hybridCnnTrans(nn.Module):
                                      switch_normal=self.switches_normal, switch_down=self.switches_down,
                                      switch_up=self.switches_up,
                                      cell_type="normal_down", dp=self.dropout_prob)
-                '''# transformer
+                # transformer
                 self.position_embed = build_position_encoding(mode='v2', hidden_dim=128)
                 self.encoder_Detrans = DeformableTransformer(d_model=128, dim_feedforward=512, dropout=0.1,
                                                              activation='gelu', num_feature_levels=1, nhead=4,
-                                                             num_encoder_layers=6, enc_n_points=4)'''
+                                                             num_encoder_layers=6, enc_n_points=4)
 
                 # print("cell_1_1",self.cell_1_1)
             elif i == 2:
@@ -107,8 +108,8 @@ class hybridCnnTrans(nn.Module):
                                      switch_up=self.switches_up,
                                      cell_type="normal_down", dp=self.dropout_prob)
                 # transformer
-                # self.position_embed = build_position_encoding(mode='v2', hidden_dim=256)
-                # self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=1, nhead=4, num_encoder_layers=6, enc_n_points=4)
+                self.position_embed = build_position_encoding(mode='v2', hidden_dim=256)
+                self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=1, nhead=4, num_encoder_layers=6, enc_n_points=4)
 
 
             elif i == 3:
@@ -196,43 +197,43 @@ class hybridCnnTrans(nn.Module):
                                        switch_up=self.switches_up,
                                        cell_type="normal_up", dp=self.dropout_prob)
 
-        # self.position_embed = build_position_encoding(mode='v2', hidden_dim=384)
-        # self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=2, nhead=4, num_encoder_layers=6, enc_n_points=4)
+        self.position_embed = build_position_encoding(mode='v2', hidden_dim=384)
+        self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=2, nhead=4, num_encoder_layers=6, enc_n_points=4)
 
 
 
         # transformer block
-        #self.transformer_blocks = nn.ModuleList()
-        #blocks = nn.ModuleList()
+        self.transformer_blocks = nn.ModuleList()
+        blocks = nn.ModuleList()
 
         self.position_embed_0 = build_position_encoding(mode='v2', hidden_dim=64)
-        #blocks.append(self.position_embed_0)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.position_embed_0)
+        self.transformer_blocks += [blocks]
         self.encoder_Detrans_0 = DeformableTransformer(d_model=64, dim_feedforward=256, dropout=0.1, activation='gelu',
                                                      num_feature_levels=1, nhead=4, num_encoder_layers=6,
                                                      enc_n_points=4)
-        #.append(self.encoder_Detrans_0)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.encoder_Detrans_0)
+        self.transformer_blocks += [blocks]
 
         # transformer
         self.position_embed_1 = build_position_encoding(mode='v2', hidden_dim=128)
-        #blocks.append(self.position_embed_1)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.position_embed_1)
+        self.transformer_blocks += [blocks]
         self.encoder_Detrans_1 = DeformableTransformer(d_model=128, dim_feedforward=512, dropout=0.1,
                                                      activation='gelu', num_feature_levels=1, nhead=4,
                                                      num_encoder_layers=6, enc_n_points=4)
-        #blocks.append(self.encoder_Detrans_1)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.encoder_Detrans_1)
+        self.transformer_blocks += [blocks]
 
         # transformer
         self.position_embed_2 = build_position_encoding(mode='v2', hidden_dim=256)
-        #blocks.append(self.position_embed_2)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.position_embed_2)
+        self.transformer_blocks += [blocks]
         self.encoder_Detrans_2 = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=1, nhead=4, num_encoder_layers=6, enc_n_points=4)
-        #blocks.append(self.encoder_Detrans_2)
-        #self.transformer_blocks += [blocks]
+        blocks.append(self.encoder_Detrans_2)
+        self.transformer_blocks += [blocks]
 
-        #print("self.transformer_blocks",self.transformer_blocks)
+        print("self.transformer_blocks",self.transformer_blocks)
 
         self.cell_2_0_output = ConvOps(self.layers_channel[0], num_classes, kernel_size=1, dropout_rate=0.1,
                                        ops_order='weight')
@@ -255,13 +256,20 @@ class hybridCnnTrans(nn.Module):
 
         if self.early_fix_arch:  # true
             self.fix_arch_up_index = {}
+            
+        if self.early_fix_arch:  # true
+            self.fix_arch_transformer_index = {}
+        
+        # Cache for dynamic transformers
+        self._transformer_cache = {}
 
     def _init_arch_parameters(self):
         normal_num_ops = np.count_nonzero(self.switches_normal[0])  # 7
         down_num_ops = np.count_nonzero(self.switches_down[0])  # 6
         up_num_ops = np.count_nonzero(self.switches_up[0])  # 4
+        transformer_num_configs = np.count_nonzero(self.switches_transformer[0])  # 7 transformer layer configs
 
-        # print("number",normal_num_ops,down_num_ops,up_num_ops)
+        # print("number",normal_num_ops,down_num_ops,up_num_ops, transformer_num_configs)
 
         k = sum(1 for i in range(self.meta_node_num) for n in range(2 + i))  # total number of input node 14
 
@@ -280,6 +288,8 @@ class hybridCnnTrans(nn.Module):
 
         #################################### 架构参数的初始化 ##########################################
         self.alphas_network = nn.Parameter(1e-3 * torch.randn(self.layers, self.depth, 3))  # 这是autodeeplab上每个点 存在的每个cell的概率
+        # Transformer layer configuration alphas - each layer depth has choices of num_layers
+        self.alphas_transformer = nn.Parameter(1e-3 * torch.randn(self.layers, transformer_num_configs))
         # self.alphas_network = nn.Parameter(torch.zeros(self.layers, self.depth, 3).normal_(1, 0.01))
         # self.network_weight = Variable(torch.zeros_like(self.alphas_network))
         # print(" self.alphas_network:",self.alphas_network)
@@ -298,6 +308,8 @@ class hybridCnnTrans(nn.Module):
             self.alphas_normal,
             # network
             self.alphas_network,
+            # transformer
+            self.alphas_transformer,
         ]
 
     def _init_weight_parameters(self):
@@ -305,12 +317,68 @@ class hybridCnnTrans(nn.Module):
             if isinstance(module, torch.nn.Conv2d):
                 init.kaiming_normal_(module.weight.data, a=0, mode='fan_in')
 
+    def _get_dynamic_transformer(self, d_model, dim_feedforward, layer_idx):
+        """
+        Dynamically create transformer based on architecture search parameters
+        """
+        if not hasattr(self, 'alphas_transformer'):
+            # Fallback to original fixed layers if alphas not initialized
+            num_layers = 6
+        else:
+            # Get number of layers from alpha weights
+            if self.gen_max_child_flag:
+                # Use argmax for child generation
+                layer_config_idx = torch.argmax(self.alphas_transformer[layer_idx]).item()
+            else:
+                # Use weighted sampling during search
+                layer_probs = F.softmax(self.alphas_transformer[layer_idx], dim=-1)
+                if self.training:
+                    # Sample during training
+                    layer_config_idx = torch.multinomial(layer_probs, 1).item()
+                else:
+                    # Use argmax during inference
+                    layer_config_idx = torch.argmax(layer_probs).item()
+            
+            # Map to actual number of layers
+            from hct_net.genotypes import TransformerLayerConfigs
+            num_layers = TransformerLayerConfigs[layer_config_idx]
+        
+        # Create cache key
+        cache_key = (layer_idx, d_model, dim_feedforward, num_layers)
+        
+        # Check cache first
+        if hasattr(self, '_transformer_cache') and cache_key in self._transformer_cache:
+            return self._transformer_cache[cache_key]
+        
+        # Create transformer with dynamic number of layers
+        transformer = DeformableTransformer(
+            d_model=d_model, 
+            dim_feedforward=dim_feedforward, 
+            dropout=0.1, 
+            activation='gelu',
+            num_feature_levels=1, 
+            nhead=4, 
+            num_encoder_layers=num_layers,
+            enc_n_points=4
+        )
+        
+        # Move transformer to the same device as the model
+        device = next(self.parameters()).device
+        transformer = transformer.to(device)
+        
+        # Cache the transformer
+        if not hasattr(self, '_transformer_cache'):
+            self._transformer_cache = {}
+        self._transformer_cache[cache_key] = transformer
+        
+        return transformer
+
     def posi_mask(self, x):
         #print("###x####", x.shape)
         x_fea = []
         x_posemb = []
         masks = []
-        '''for lvl, fea in enumerate(x):
+        for lvl, fea in enumerate(x):
             print("######lvl####",lvl)
             print("fea",fea.shape)
             print("######fea.shape[0]######",fea.shape[0])
@@ -321,10 +389,10 @@ class hybridCnnTrans(nn.Module):
             if lvl > 1:
                 x_fea.append(fea)
                 x_posemb.append(self.position_embed(fea))
-                masks.append(torch.zeros((fea.shape[0],fea.shape[1], fea.shape[2]), dtype=torch.bool).cuda())'''
+                masks.append(torch.zeros((fea.shape[0],fea.shape[1], fea.shape[2]), dtype=torch.bool, device=fea.device))
         x_fea.append(x)
         x_posemb.append(self.position_embed(x))
-        masks.append(torch.zeros((x.shape[0], x.shape[2], x.shape[3]), dtype=torch.bool).cuda())
+        masks.append(torch.zeros((x.shape[0], x.shape[2], x.shape[3]), dtype=torch.bool, device=x.device))
         # print("x_posemb",len(x_posemb))
         return x_fea, masks, x_posemb
 
@@ -378,6 +446,12 @@ class hybridCnnTrans(nn.Module):
                 for key, value_lst in self.fix_arch_up_index.items():
                     self.weights_up[key, :].zero_()
                     self.weights_up[key, value_lst[0]] = 1
+                    
+            # Fix transformer layers during search
+            if hasattr(self, 'fix_arch_transformer_index') and len(self.fix_arch_transformer_index.keys()) > 0:
+                for key, value_lst in self.fix_arch_transformer_index.items():
+                    # Store fixed transformer configuration for this layer
+                    pass  # Will be handled in _get_dynamic_transformer
 
         if not self.random_sample and not self.gen_max_child_flag:
             cate_prob_normal = F.softmax(self.alphas_normal, dim=-1)
@@ -413,8 +487,10 @@ class hybridCnnTrans(nn.Module):
         masks_0 = []
         x_fea_0.append(self.stem1_f)
         x_posemb_0.append(self.position_embed_0(self.stem1_f))
-        masks_0.append(torch.zeros((self.stem1_f.shape[0], self.stem1_f.shape[2], self.stem1_f.shape[3]), dtype=torch.bool).cuda())
-        x_trans_0 = self.encoder_Detrans_0(x_fea_0, masks_0, x_posemb_0)  # [4,16384,64]
+        masks_0.append(torch.zeros((self.stem1_f.shape[0], self.stem1_f.shape[2], self.stem1_f.shape[3]), dtype=torch.bool, device=self.stem1_f.device))
+        # Dynamic transformer for layer 0
+        dynamic_transformer_0 = self._get_dynamic_transformer(d_model=64, dim_feedforward=256, layer_idx=0)
+        x_trans_0 = dynamic_transformer_0(x_fea_0, masks_0, x_posemb_0)  # [4,16384,64]
 
         self.cell_0 = x_trans_0[:, :1048576, :].transpose(-1, -2).view(self.stem1_f.shape)  # [4,64,128,128]
 
@@ -429,8 +505,10 @@ class hybridCnnTrans(nn.Module):
         masks_1 = []
         x_fea_1.append(self.cell_1_1_f)
         x_posemb_1.append(self.position_embed_1(self.cell_1_1_f))
-        masks_1.append(torch.zeros((self.cell_1_1_f.shape[0], self.cell_1_1_f.shape[2], self.cell_1_1_f.shape[3]), dtype=torch.bool).cuda())
-        x_trans_1 = self.encoder_Detrans_1(x_fea_1, masks_1, x_posemb_1)  # [4,16384,64]
+        masks_1.append(torch.zeros((self.cell_1_1_f.shape[0], self.cell_1_1_f.shape[2], self.cell_1_1_f.shape[3]), dtype=torch.bool, device=self.cell_1_1_f.device))
+        # Dynamic transformer for layer 1
+        dynamic_transformer_1 = self._get_dynamic_transformer(d_model=128, dim_feedforward=512, layer_idx=1)
+        x_trans_1 = dynamic_transformer_1(x_fea_1, masks_1, x_posemb_1)  # [4,16384,64]
         # print("####x_trans_1#####",x_trans_1.shape)
         self.cell_1 = x_trans_1[:, :524288, :].transpose(-1, -2).view(self.cell_1_1_f.shape)  # [4,64,128,128]
         # print("###self.cell_1##",self.cell_1.shape)
@@ -452,9 +530,11 @@ class hybridCnnTrans(nn.Module):
         masks_2 = []
         x_fea_2.append(self.cell_2_2_f)
         x_posemb_2.append(self.position_embed_2(self.cell_2_2_f))
-        masks_2.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool).cuda())
+        masks_2.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool, device=self.cell_2_2_f.device))
         #print("*******masks*****",masks.shape)
-        x_trans_2 = self.encoder_Detrans_2(x_fea_2, masks_2, x_posemb_2) #[4,16384,64]
+        # Dynamic transformer for layer 2  
+        dynamic_transformer_2 = self._get_dynamic_transformer(d_model=256, dim_feedforward=1024, layer_idx=2)
+        x_trans_2 = dynamic_transformer_2(x_fea_2, masks_2, x_posemb_2) #[4,16384,64]
         #print("###x_trans_0####",x_trans_0.shape)
         #self.cell_0 = self.transposeconv_stage2(x_trans_0[:, :512, :].transpose(-1, -2).view(self.stem1_f.shape))
         if x_trans_2 is not None:
@@ -564,20 +644,27 @@ class hybridCnnTrans(nn.Module):
         self.alphas_up = alphas_dict['alphas_up']
         self.alphas_normal = alphas_dict['alphas_normal']
         self.alphas_network = alphas_dict['alphas_network']
+        if 'alphas_transformer' in alphas_dict:
+            self.alphas_transformer = alphas_dict['alphas_transformer']
         self._arch_parameters = [
             self.alphas_down,
             self.alphas_up,
             self.alphas_normal,
             self.alphas_network
         ]
+        if hasattr(self, 'alphas_transformer'):
+            self._arch_parameters.append(self.alphas_transformer)
 
     def alphas_dict(self):
-        return {
+        alphas_dict = {
             'alphas_down': self.alphas_down,
             'alphas_normal': self.alphas_normal,
             'alphas_up': self.alphas_up,
             'alphas_network': self.alphas_network
         }
+        if hasattr(self, 'alphas_transformer'):
+            alphas_dict['alphas_transformer'] = self.alphas_transformer
+        return alphas_dict
 
     def arch_parameters(self):
         return self._arch_parameters

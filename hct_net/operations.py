@@ -29,7 +29,6 @@ OPS = {
 }
 
 
-
 def consistent_dim(states):  #维度一致
     # handle the un-consistent dimension
     # zbabby
@@ -353,11 +352,6 @@ class CWeightOp(BaseOp):
         #print("output", rst.shape)
         return rst
 
-
-
-
-
-
 class PoolingOp(BaseOp):
 
     def __init__(self, in_channels, out_channels, pool_type, kernel_size=2, stride=2,
@@ -570,9 +564,6 @@ class Dynamic_convOPS(BaseOp):
 
         self.weight = nn.Parameter(torch.randn(K, out_channels, in_channels//groups, kernel_size, kernel_size), requires_grad=True)
 
-
-
-
         if bias:
             self.bias = nn.Parameter(torch.Tensor(K, out_channels))
         else:
@@ -646,12 +637,3 @@ class Dynamic_convOPS(BaseOp):
         #rst = self.norm(self.conv(x*output)) if self.stride >= 2 else x*output
 
         return output
-
-
-
-
-
-
-
-
-

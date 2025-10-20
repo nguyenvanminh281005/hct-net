@@ -139,8 +139,8 @@ def main(args):
 
 
     #############################select model################################
-    args.model = "UnetLayer7"
-    args.layers = 7 # 7 layer transformer, 1 layer cnn đầu tiên là học cục bộ trước rồi, đi vào 6 layer cnn có cả transformer sau
+    # Keep model and layers from command-line arguments (don't override)
+    # args.model and args.layers are already set from argparse
     sp_train_batch = original_train_batch
     sp_val_batch = original_val_batch
     sp_lr = args.lr
@@ -593,7 +593,7 @@ if __name__ == '__main__':
 
     # model and device setting
     parser.add_argument('--init_weight_type', type=str, default="kaiming", help="the model init ")
-    parser.add_argument('--arch_after', type=int, default=3,
+    parser.add_argument('--arch_after', type=int, default=5,
                         help=" the first arch_after epochs without arch parameters traing")
     parser.add_argument('--infer_epoch', type=int, default=4, help=" val freq(epoch) ")
     parser.add_argument('--compute_freq', type=int, default=40, help=" compute freq(epoch) ")

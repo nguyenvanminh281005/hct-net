@@ -102,14 +102,16 @@ class hybridCnnTrans(nn.Module):
                                        switch_up=self.switches_up,
                                        cell_type="normal_up", dp=self.dropout_prob)
 
-                self.cell_2_2 = Cell(self.meta_node_num,
-                                     -1, self.layers_channel[1], self.cell_channels[2],
-                                     switch_normal=self.switches_normal, switch_down=self.switches_down,
-                                     switch_up=self.switches_up,
-                                     cell_type="normal_down", dp=self.dropout_prob)
-                # transformer
-                self.position_embed = build_position_encoding(mode='v2', hidden_dim=256)
-                self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=1, nhead=4, num_encoder_layers=6, enc_n_points=4)
+                # Only create cell_2_2 if we have enough depth
+                if len(self.cell_channels) > 2:
+                    self.cell_2_2 = Cell(self.meta_node_num,
+                                         -1, self.layers_channel[1], self.cell_channels[2],
+                                         switch_normal=self.switches_normal, switch_down=self.switches_down,
+                                         switch_up=self.switches_up,
+                                         cell_type="normal_down", dp=self.dropout_prob)
+                    # transformer
+                    self.position_embed = build_position_encoding(mode='v2', hidden_dim=256)
+                    self.encoder_Detrans = DeformableTransformer(d_model=256, dim_feedforward=1024, dropout=0.1, activation='gelu', num_feature_levels=1, nhead=4, num_encoder_layers=6, enc_n_points=4)
 
 
             elif i == 3:
@@ -290,6 +292,16 @@ class hybridCnnTrans(nn.Module):
         self.alphas_network = nn.Parameter(1e-3 * torch.randn(self.layers, self.depth, 3))  # 这是autodeeplab上每个点 存在的每个cell的概率
         # Transformer layer configuration alphas - each layer depth has choices of num_layers
         self.alphas_transformer = nn.Parameter(1e-3 * torch.randn(self.layers, transformer_num_configs))
+        
+        # Transformer connection alphas - search which connections to enable/disable
+        # Dynamic based on number of layers
+        from hct_net.genotypes import get_transformer_connection_pairs
+        self.transformer_connection_pairs = get_transformer_connection_pairs(self.layers)
+        self.num_transformer_connections = len(self.transformer_connection_pairs)
+        if self.num_transformer_connections > 0:
+            self.alphas_transformer_connections = nn.Parameter(1e-3 * torch.randn(self.num_transformer_connections, 2))  # on/off for each connection
+        else:
+            self.alphas_transformer_connections = None  # No connections for very shallow networks
         # self.alphas_network = nn.Parameter(torch.zeros(self.layers, self.depth, 3).normal_(1, 0.01))
         # self.network_weight = Variable(torch.zeros_like(self.alphas_network))
         # print(" self.alphas_network:",self.alphas_network)
@@ -311,11 +323,111 @@ class hybridCnnTrans(nn.Module):
             # transformer
             self.alphas_transformer,
         ]
+        # Add transformer connections if available
+        if self.alphas_transformer_connections is not None:
+            self._arch_parameters.append(self.alphas_transformer_connections)
 
     def _init_weight_parameters(self):
         for name, module in self.named_modules():
             if isinstance(module, torch.nn.Conv2d):
                 init.kaiming_normal_(module.weight.data, a=0, mode='fan_in')
+    
+    def compute_architecture_complexity(self):
+        """
+        Calculate architecture complexity based on:
+        1. Number of active operations in CNN cells
+        2. Number of transformer layers
+        3. Number of active transformer connections
+        """
+        complexity = 0.0
+        
+        # 1. CNN operations complexity
+        # Weight by operation cost (relative computational cost)
+        operation_costs = {
+            'none': 0.0,
+            'identity': 0.1,
+            'avg_pool': 0.2,
+            'max_pool': 0.2,
+            'conv': 1.0,
+            'dep_conv': 0.6,
+            'dil_conv': 1.2,
+            'shuffle_conv': 0.8,
+            'cweight': 0.7,
+            'Dynamic_convOPS': 1.5,
+            'down_conv': 1.0,
+            'down_dep_conv': 0.6,
+            'down_dil_conv': 1.2,
+            'down_cweight': 0.7,
+            'down_Dynamic_convOPS': 1.5,
+            'up_conv': 1.0,
+            'up_dep_conv': 0.6,
+            'up_dil_conv': 1.2,
+            'up_cweight': 0.7,
+            'up_Dynamic_convOPS': 1.5,
+        }
+        
+        # Get operation probabilities
+        weights_normal = F.softmax(self.alphas_normal, dim=-1)
+        weights_down = F.softmax(self.alphas_down, dim=-1)
+        weights_up = F.softmax(self.alphas_up, dim=-1)
+        
+        # Calculate expected complexity for each mixop
+        for i in range(len(self.alphas_normal)):
+            for j, active in enumerate(self.switches_normal[i]):
+                if active:
+                    op_name = self.CellPos[j]
+                    cost = operation_costs.get(op_name, 1.0)
+                    complexity += weights_normal[i, j] * cost
+        
+        for i in range(len(self.alphas_down)):
+            for j, active in enumerate(self.switches_down[i]):
+                if active:
+                    op_name = self.CellLinkDownPos[j]
+                    cost = operation_costs.get(op_name, 1.0)
+                    complexity += weights_down[i, j] * cost
+        
+        for i in range(len(self.alphas_up)):
+            for j, active in enumerate(self.switches_up[i]):
+                if active:
+                    op_name = self.CellLinkUpPos[j]
+                    cost = operation_costs.get(op_name, 1.0)
+                    complexity += weights_up[i, j] * cost
+        
+        # 2. Transformer layers complexity
+        # More layers = higher complexity
+        from hct_net.genotypes import TransformerLayerConfigs
+        if hasattr(self, 'alphas_transformer') and self.alphas_transformer is not None:
+            weights_transformer = F.softmax(self.alphas_transformer, dim=-1)
+            for layer_idx in range(self.layers):
+                expected_num_layers = 0.0
+                for config_idx, num_layers in enumerate(TransformerLayerConfigs):
+                    # Guard indexing if shapes don't match (robust for smaller models)
+                    if layer_idx < weights_transformer.shape[0] and config_idx < weights_transformer.shape[1]:
+                        expected_num_layers += weights_transformer[layer_idx, config_idx] * num_layers
+                # Transformer is more expensive than CNN
+                complexity += expected_num_layers * 2.0  # Each transformer layer costs 2x a conv layer
+        else:
+            # No transformer alphas configured -> assume zero transformer layers
+            pass
+
+        # 3. Transformer connections complexity
+        # Each active connection adds overhead
+        if hasattr(self, 'alphas_transformer_connections') and self.alphas_transformer_connections is not None:
+            weights_transformer_conn = F.softmax(self.alphas_transformer_connections, dim=-1)
+            # Ensure num_transformer_connections exists
+            num_conns = getattr(self, 'num_transformer_connections', weights_transformer_conn.shape[0])
+            for conn_idx in range(num_conns):
+                # Index 1 = connection ON, Index 0 = connection OFF
+                if conn_idx < weights_transformer_conn.shape[0] and weights_transformer_conn.shape[1] > 1:
+                    prob_on = weights_transformer_conn[conn_idx, 1]
+                else:
+                    prob_on = 0.0
+                complexity += prob_on * 1.5  # Each connection adds moderate cost
+        else:
+            # No transformer connections configured -> no extra complexity
+            pass
+        
+        return complexity
 
     def _get_dynamic_transformer(self, d_model, dim_feedforward, layer_idx):
         """
@@ -420,12 +532,20 @@ class hybridCnnTrans(nn.Module):
                                                                                                                      1),
                                                                         1)
             self.network_weight = F.softmax(self.alphas_network, dim=-1)  # beta
+            # Transformer connections weight
+            self.weights_transformer_conn = torch.zeros_like(self.alphas_transformer_connections).scatter_(1, 
+                                                                            torch.argmax(self.alphas_transformer_connections, dim=-1).view(-1, 1), 1)
         else:
             self.weights_normal = self._get_weights(self.alphas_normal)
             self.weights_down = self._get_weights(self.alphas_down)
             self.weights_up = self._get_weights(self.alphas_up)
 
             self.network_weight = F.softmax(self.alphas_network, dim=-1)  # beta
+            # Transformer connections weight - for each connection: [prob_off, prob_on]
+            if self.alphas_transformer_connections is not None:
+                self.weights_transformer_conn = self._get_weights(self.alphas_transformer_connections)
+            else:
+                self.weights_transformer_conn = None
 
         '''print("self.weights_normal",self.weights_normal)
         print("self.weights_down", self.weights_down)
@@ -520,124 +640,156 @@ class hybridCnnTrans(nn.Module):
                                           self.weights_up) * self.network_weight[2][0][2] / (
                                   self.network_weight[2][0][1] + self.network_weight[2][0][2])
         # print("####self.cell_2_0_f#####",self.cell_2_0_f.shape)
-        self.cell_2_2_f = self.cell_2_2(None, self.cell_1_1_f, self.weights_normal, self.weights_down, self.weights_up)
-        # print("####self.cell_2_2_f#####",self.cell_2_2_f.shape)
+        
+        # Only process deeper layers if they exist (UNet7+)
+        if hasattr(self, 'cell_2_2'):
+            self.cell_2_2_f = self.cell_2_2(None, self.cell_1_1_f, self.weights_normal, self.weights_down, self.weights_up)
+            # print("####self.cell_2_2_f#####",self.cell_2_2_f.shape)
 
-        #################################################### transformer ########################################3
-        ###############################position##############################
-        x_fea_2 = []
-        x_posemb_2 = []
-        masks_2 = []
-        x_fea_2.append(self.cell_2_2_f)
-        x_posemb_2.append(self.position_embed_2(self.cell_2_2_f))
-        masks_2.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool, device=self.cell_2_2_f.device))
-        #print("*******masks*****",masks.shape)
-        # Dynamic transformer for layer 2  
-        dynamic_transformer_2 = self._get_dynamic_transformer(d_model=256, dim_feedforward=1024, layer_idx=2)
-        x_trans_2 = dynamic_transformer_2(x_fea_2, masks_2, x_posemb_2) #[4,16384,64]
-        #print("###x_trans_0####",x_trans_0.shape)
-        #self.cell_0 = self.transposeconv_stage2(x_trans_0[:, :512, :].transpose(-1, -2).view(self.stem1_f.shape))
-        if x_trans_2 is not None:
-            self.cell_2 = x_trans_2[:, :262144, :].transpose(-1, -2).view(self.cell_2_2_f.shape) #[4,64,128,128]
+            #################################################### transformer ########################################3
+            ###############################position##############################
+            x_fea_2 = []
+            x_posemb_2 = []
+            masks_2 = []
+            x_fea_2.append(self.cell_2_2_f)
+            x_posemb_2.append(self.position_embed_2(self.cell_2_2_f))
+            masks_2.append(torch.zeros((self.cell_2_2_f.shape[0], self.cell_2_2_f.shape[2],self.cell_2_2_f.shape[3]),dtype=torch.bool, device=self.cell_2_2_f.device))
+            #print("*******masks*****",masks.shape)
+            # Dynamic transformer for layer 2  
+            dynamic_transformer_2 = self._get_dynamic_transformer(d_model=256, dim_feedforward=1024, layer_idx=2)
+            x_trans_2 = dynamic_transformer_2(x_fea_2, masks_2, x_posemb_2) #[4,16384,64]
+            #print("###x_trans_0####",x_trans_0.shape)
+            #self.cell_0 = self.transposeconv_stage2(x_trans_0[:, :512, :].transpose(-1, -2).view(self.stem1_f.shape))
+            if x_trans_2 is not None:
+                self.cell_2 = x_trans_2[:, :262144, :].transpose(-1, -2).view(self.cell_2_2_f.shape) #[4,64,128,128]
+            else:
+                self.cell_2 = self.cell_2_2_f  # Fallback to original feature if transformer fails
+            #print("###self.cell_2##",self.cell_2.shape)
         else:
-            self.cell_2 = self.cell_2_2_f  # Fallback to original feature if transformer fails
-        #print("###self.cell_2##",self.cell_2.shape)
+            # For UNet3, no deeper encoder layers
+            self.cell_2 = None
 
-        # layer 3
+        # layer 3 - only for UNet7+
+        if self.layers > 3 and hasattr(self, 'cell_3_1_0'):
+            self.cell_3_1_f = self.cell_3_1_0(self.cell_1_1_f, self.cell_2_0_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[3][1][0] + \
+                              self.cell_3_1_1(None, self.cell_1_1_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[3][1][1] + \
+                              self.cell_3_1_2(self.cell_1_1_f, self.cell_2_2_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[3][1][2]
 
-        self.cell_3_1_f = self.cell_3_1_0(self.cell_1_1_f, self.cell_2_0_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[3][1][0] + \
-                          self.cell_3_1_1(None, self.cell_1_1_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[3][1][1] + \
-                          self.cell_3_1_2(self.cell_1_1_f, self.cell_2_2_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[3][1][2]
+            self.cell_3_3_f = self.cell_3_3(None, self.cell_2_2_f, self.weights_normal, self.weights_down, self.weights_up)
+            # + \self.cell_2_2
+            # print("####self.cell_3_3_f####",self.cell_3_3_f.shape)
+        
+        # layer 4 - only for UNet7+
+        if self.layers > 4 and hasattr(self, 'cell_4_0_0'):
+            self.cell_4_0_f = self.cell_4_0_0(self.stem1_f, self.cell_2_0_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[4][0][1] / (
+                                      self.network_weight[4][0][1] + self.network_weight[4][0][2]) + \
+                              self.cell_4_0_1(self.cell_2_0_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[4][0][2] / (
+                                      self.network_weight[4][0][1] + self.network_weight[4][0][2])
+            # print("####self.cell_3_3_f####",self.cell_3_3_f.shape)
+            
+            self.cell_4_2_f = self.cell_4_2_0(self.cell_2_2_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[4][2][0] + \
+                              self.cell_4_2_1(None, self.cell_2_2_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[4][2][1] + \
+                              self.cell_4_2_2(self.cell_2_2_f, self.cell_3_3_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[4][2][2]
+            # Note: Layer 4 doesn't receive transformer connection in formula (i, n-i+2)
+            # print("####self.cell_4_2_f ###",self.cell_4_2_f.shape)
+        
+        # layer 5 - only for UNet7+
+        if self.layers > 5 and hasattr(self, 'cell_5_1_0'):
+            self.cell_5_1_f = self.cell_5_1_0(self.cell_3_1_f, self.cell_4_0_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[5][1][0] + \
+                              self.cell_5_1_1(self.cell_1_1_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[5][1][1] + \
+                              self.cell_5_1_2(self.cell_3_1_f, self.cell_4_2_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[5][1][2]
+            # print("####self.cell_5_1_f ###",self.cell_5_1_f.shape)
+        
+        # layer 6 - only for UNet7+
+        if self.layers > 6 and hasattr(self, 'cell_6_0_0'):
+            self.cell_6_0_f = self.cell_6_0_0(self.cell_2_0_f, self.cell_4_0_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[6][0][1] / (
+                                      self.network_weight[6][0][1] + self.network_weight[6][0][2]) + \
+                              self.cell_6_0_1(self.cell_4_0_f, self.cell_5_1_f, self.weights_normal, self.weights_down,
+                                              self.weights_up) * self.network_weight[6][0][2] / (
+                                      self.network_weight[6][0][1] + self.network_weight[6][0][2])
 
-        self.cell_3_3_f = self.cell_3_3(None, self.cell_2_2_f, self.weights_normal, self.weights_down, self.weights_up)
-        # + \self.cell_2_2
-        # print("####self.cell_3_3_f####",self.cell_3_3_f.shape)
-        # layer 4
-        self.cell_4_0_f = self.cell_4_0_0(self.stem1_f, self.cell_2_0_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[4][0][1] / (
-                                  self.network_weight[4][0][1] + self.network_weight[4][0][2]) + \
-                          self.cell_4_0_1(self.cell_2_0_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[4][0][2] / (
-                                  self.network_weight[4][0][1] + self.network_weight[4][0][2])
-        # print("####self.cell_3_3_f####",self.cell_3_3_f.shape)
+            # print("####self.cell_6_0_f ###",self.cell_6_0_f.shape)
 
-        self.cell_4_2_f = self.cell_4_2_0(self.cell_2_2_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[4][2][0] + \
-                          self.cell_4_2_1(None, self.cell_2_2_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[4][2][1] + \
-                          self.cell_4_2_2(self.cell_2_2_f, self.cell_3_3_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[4][2][2] + \
-                                          self.cell_2
-        # print("####self.cell_4_2_f ###",self.cell_4_2_f.shape)
-        # layer 5
-
-        self.cell_5_1_f = self.cell_5_1_0(self.cell_3_1_f, self.cell_4_0_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[5][1][0] + \
-                          self.cell_5_1_1(self.cell_1_1_f, self.cell_3_1_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[5][1][1] + \
-                          self.cell_5_1_2(self.cell_3_1_f, self.cell_4_2_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[5][1][2] + \
-                          self.cell_1
-        # print("####self.cell_5_1_f ###",self.cell_5_1_f.shape)
-        # layer 6
-        self.cell_6_0_f = self.cell_6_0_0(self.cell_2_0_f, self.cell_4_0_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[6][0][1] / (
-                                  self.network_weight[6][0][1] + self.network_weight[6][0][2]) + \
-                          self.cell_6_0_1(self.cell_4_0_f, self.cell_5_1_f, self.weights_normal, self.weights_down,
-                                          self.weights_up) * self.network_weight[6][0][2] / (
-                                  self.network_weight[6][0][1] + self.network_weight[6][0][2]) + \
-                          self.cell_0
-
-        # print("####self.cell_6_0_f ###",self.cell_6_0_f.shape)
-
-        self.ouput_2_0 = self.cell_2_0_output(self.cell_2_0_f)
-        self.ouput_4_0 = self.cell_4_0_output(self.cell_4_0_f)
-        self.ouput_6_0 = self.cell_6_0_output(self.cell_6_0_f)
-
-        self.ouput_2_0 = F.interpolate(self.ouput_2_0, size=(h, w), mode='bilinear', align_corners=False)
-        self.ouput_4_0 = F.interpolate(self.ouput_4_0, size=(h, w), mode='bilinear', align_corners=False)
-        self.ouput_6_0 = F.interpolate(self.ouput_6_0, size=(h, w), mode='bilinear', align_corners=False)
-
-        preds = [self.ouput_2_0, self.ouput_4_0, self.ouput_6_0]
+        # Generate outputs based on available layers
+        preds = []
+        if hasattr(self, 'cell_2_0_output'):
+            self.ouput_2_0 = self.cell_2_0_output(self.cell_2_0_f)
+            self.ouput_2_0 = F.interpolate(self.ouput_2_0, size=(h, w), mode='bilinear', align_corners=False)
+            preds.append(self.ouput_2_0)
+        
+        if self.layers > 4 and hasattr(self, 'cell_4_0_output') and hasattr(self, 'cell_4_0_f'):
+            self.ouput_4_0 = self.cell_4_0_output(self.cell_4_0_f)
+            self.ouput_4_0 = F.interpolate(self.ouput_4_0, size=(h, w), mode='bilinear', align_corners=False)
+            preds.append(self.ouput_4_0)
+        
+        if self.layers > 6 and hasattr(self, 'cell_6_0_output') and hasattr(self, 'cell_6_0_f'):
+            self.ouput_6_0 = self.cell_6_0_output(self.cell_6_0_f)
+            self.ouput_6_0 = F.interpolate(self.ouput_6_0, size=(h, w), mode='bilinear', align_corners=False)
+            preds.append(self.ouput_6_0)
         assert isinstance(preds, list)
         preds = [pred.view(pred.size(0), -1) for pred in preds]
         target = target.view(target.size(0), -1)
         if not self.random_sample and self.training and not self.gen_max_child_flag:
+            # Compute task loss
             for i in range(len(preds)):
                 if i == 0:
                     target1_loss = criterion(preds[i], target)
                 target1_loss += criterion(preds[i], target)
 
             error_loss = target1_loss
-            # print("error_loss",target1_loss)
+            
+            # Compute architecture complexity loss
+            complexity = self.compute_architecture_complexity()
+            complexity_weight = 0.001  # Adjustable weight for complexity regularization
+            complexity_loss = complexity_weight * complexity
+            
+            # Total loss = task loss + complexity loss
+            total_loss = error_loss + complexity_loss
+            
+            # print("error_loss",target1_loss, "complexity_loss", complexity_loss)
             self.weights_normal.grad = torch.zeros_like(self.weights_normal)
             # print("cell_up_reward", self.weights_normal.grad)
             self.weights_up.grad = torch.zeros_like(self.weights_up)
             # print("cell_up_reward", self.weights_up.grad)
             self.weights_down.grad = torch.zeros_like(self.weights_down)
             self.network_weight.grad = torch.zeros_like(self.network_weight)
+            if self.weights_transformer_conn is not None:
+                self.weights_transformer_conn.grad = torch.zeros_like(self.weights_transformer_conn)
 
-            (error_loss + loss_alpha).backward()
+            (total_loss + loss_alpha).backward()
 
             # print("self.weights_normal.grad",self.weights_down.grad)
             self.cell_up_reward = self.weights_up.grad.data.sum(dim=1)
             self.cell_down_reward = self.weights_down.grad.data.sum(dim=1)
             self.cell_normal_reward = self.weights_normal.grad.data.sum(dim=1)
+            if self.weights_transformer_conn is not None:
+                self.transformer_conn_reward = self.weights_transformer_conn.grad.data.sum(dim=1)
             # self.cell_network_reward = self.network_weight.grad.data.sum(dim=1)
             # print("up,normal,down", self.cell_up_reward,self.cell_normal_reward,self.cell_down_reward)
 
             self.alphas_normal.grad.data.mul_(self.cell_normal_reward.view(-1, 1))
             self.alphas_down.grad.data.mul_(self.cell_down_reward.view(-1, 1))
             self.alphas_up.grad.data.mul_(self.cell_up_reward.view(-1, 1))
+            if self.alphas_transformer_connections is not None:
+                self.alphas_transformer_connections.grad.data.mul_(self.transformer_conn_reward.view(-1, 1))
             # self.alphas_network.grad.data.mul_(self.cell_network_reward.view(-1, 1))
 
             # print("self.weights_normal.grad", self.alphas_down.grad)
             # print("self.weights_normal.grad", self.alphas_down)
 
-        return [self.ouput_2_0, self.ouput_4_0, self.ouput_6_0]
+        return preds
 
     def load_alphas(self, alphas_dict):
         self.alphas_down = alphas_dict['alphas_down']
@@ -646,6 +798,8 @@ class hybridCnnTrans(nn.Module):
         self.alphas_network = alphas_dict['alphas_network']
         if 'alphas_transformer' in alphas_dict:
             self.alphas_transformer = alphas_dict['alphas_transformer']
+        if 'alphas_transformer_connections' in alphas_dict:
+            self.alphas_transformer_connections = alphas_dict['alphas_transformer_connections']
         self._arch_parameters = [
             self.alphas_down,
             self.alphas_up,
@@ -654,6 +808,8 @@ class hybridCnnTrans(nn.Module):
         ]
         if hasattr(self, 'alphas_transformer'):
             self._arch_parameters.append(self.alphas_transformer)
+        if hasattr(self, 'alphas_transformer_connections'):
+            self._arch_parameters.append(self.alphas_transformer_connections)
 
     def alphas_dict(self):
         alphas_dict = {
@@ -664,6 +820,8 @@ class hybridCnnTrans(nn.Module):
         }
         if hasattr(self, 'alphas_transformer'):
             alphas_dict['alphas_transformer'] = self.alphas_transformer
+        if hasattr(self, 'alphas_transformer_connections'):
+            alphas_dict['alphas_transformer_connections'] = self.alphas_transformer_connections
         return alphas_dict
 
     def arch_parameters(self):
@@ -683,6 +841,23 @@ class hybridCnnTrans(nn.Module):
     def _get_weights(self, log_alpha):
         m = torch.distributions.one_hot_categorical.OneHotCategorical(probs=F.softmax(log_alpha, dim=-1))
         return m.sample()
+    
+    def _get_connection_weight(self, encoder_layer, decoder_layer):
+        """
+        Get transformer connection weight for a specific encoder-decoder pair
+        Returns 1.0 if connection not searchable, or the searched weight
+        """
+        if self.alphas_transformer_connections is None or self.num_transformer_connections == 0:
+            return 1.0  # Default: all connections active
+        
+        # Find connection index
+        try:
+            conn_idx = self.transformer_connection_pairs.index((encoder_layer, decoder_layer))
+            conn_weight = F.softmax(self.alphas_transformer_connections[conn_idx], dim=-1)[1]  # prob ON
+            return conn_weight
+        except (ValueError, IndexError):
+            # Connection not in search space, default to ON
+            return 1.0
 
     def genotype(self):
         '''
@@ -711,11 +886,28 @@ class hybridCnnTrans(nn.Module):
         normal_normal_gen = self.parser_normal_old(weight_normal.copy(), self.switches_normal, self.CellPos,
                                                    self.meta_node_num)
 
+        # Extract transformer connections
+        transformer_connections = []
+        if hasattr(self, 'alphas_transformer_connections') and self.alphas_transformer_connections is not None:
+            weight_transformer_conn = F.softmax(self.alphas_transformer_connections, dim=-1).data.cpu().numpy()
+            for conn_idx, (enc_layer, dec_layer) in enumerate(self.transformer_connection_pairs):
+                # Index 1 = ON, Index 0 = OFF
+                prob_on = weight_transformer_conn[conn_idx, 1]
+                prob_off = weight_transformer_conn[conn_idx, 0]
+                is_enabled = prob_on > prob_off
+                transformer_connections.append({
+                    'encoder_layer': enc_layer,
+                    'decoder_layer': dec_layer,
+                    'enabled': bool(is_enabled),
+                    'prob_on': float(prob_on)
+                })
+
         concat = range(2, self.meta_node_num + 2)
         geno_type = Genotype(
             normal_down=normal_down_gen, normal_down_concat=concat,
             normal_up=normal_up_gen, normal_up_concat=concat,
             normal_normal=normal_normal_gen, normal_normal_concat=concat,
+            transformer_connections=transformer_connections,
         )
         return geno_type
 

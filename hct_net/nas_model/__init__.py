@@ -11,7 +11,10 @@ from hct_net.nas_model.hybridCnnTransformer import hybridCnnTrans
 
 
 models_dict={
+    'UnetLayer3':hybridCnnTrans,
     'UnetLayer7':hybridCnnTrans,
+    'UnetLayer9':hybridCnnTrans,
+    'UnetLayer9_v2':hybridCnnTrans,
 }
 
 
@@ -42,30 +45,47 @@ def init_weights(net, init_type='kaiming', gain=0.02):
 def get_models(args,switches_normal,switches_down,switches_up,switches_transformer,early_fix_arch,gen_max_child_flag,random_sample,):
 
     '''get the correct model '''
-    model_name=args.model
-    if model_name=="UnetLayer7":
-        assert args.layers==7
-        model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
-                    meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
-                 use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
-        #3 16 1 4 7 0 true store_true
-
-    elif model_name=="UnetLayer9":
-        assert args.layers==9
-        model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
-                    meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
-                 use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
-    elif model_name=='UnetLayer9_v2':
-        assert args.layers==9
-        model=models_dict[model_name](input_c=args.input_c,c=args.init_channel,num_classes=args.num_classes,
-                    meta_node_num=args.meta_node_num, layers=args.layers,dp=args.dropout_prob,
-                 use_sharing=args.use_sharing,double_down_channel=args.double_down_channel,use_softmax_head=args.use_softmax_head,
-                 switches_normal=switches_normal,switches_down=switches_down,switches_up=switches_up,switches_transformer=switches_transformer,early_fix_arch=args.early_fix_arch,gen_max_child_flag=args.gen_max_child_flag,random_sample=args.random_sample)
-    else:
-        raise  NotImplementedError("the model is not exists !")
-    init_weights(model,args.init_weight_type)
+    model_name = args.model
+    
+    # Validate model name exists
+    if model_name not in models_dict:
+        raise NotImplementedError(f"Model {model_name} does not exist! Available models: {list(models_dict.keys())}")
+    
+    # Validate layers parameter matches model name (silent auto-correction)
+    expected_layers_map = {
+        'UnetLayer3': 3,
+        'UnetLayer7': 7,
+        'UnetLayer9': 9,
+        'UnetLayer9_v2': 9,
+    }
+    
+    if model_name in expected_layers_map:
+        expected_layers = expected_layers_map[model_name]
+        if args.layers != expected_layers:
+            # Silently adjust layers to match model name expectation
+            args.layers = expected_layers
+    
+    # Create model with unified parameters
+    model = models_dict[model_name](
+        input_c=args.input_c,
+        c=args.init_channel,
+        num_classes=args.num_classes,
+        meta_node_num=args.meta_node_num,
+        layers=args.layers,
+        dp=args.dropout_prob,
+        use_sharing=args.use_sharing,
+        double_down_channel=args.double_down_channel,
+        use_softmax_head=args.use_softmax_head,
+        switches_normal=switches_normal,
+        switches_down=switches_down,
+        switches_up=switches_up,
+        switches_transformer=switches_transformer,
+        early_fix_arch=args.early_fix_arch,
+        gen_max_child_flag=args.gen_max_child_flag,
+        random_sample=args.random_sample
+    )
+    
+    init_weights(model, args.init_weight_type)
     return model
 
 

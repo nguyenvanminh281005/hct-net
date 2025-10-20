@@ -1,7 +1,59 @@
 from collections import namedtuple
 import numpy as np
 
-Genotype = namedtuple('Genotype', 'normal_down normal_down_concat normal_up normal_up_concat normal_normal normal_normal_concat')
+# Updated Genotype to include transformer connections between encoder-decoder layers
+# Using defaults parameter to make transformer_connections optional for backward compatibility
+class Genotype(namedtuple('Genotype', 'normal_down normal_down_concat normal_up normal_up_concat normal_normal normal_normal_concat transformer_connections')):
+    __slots__ = ()
+    
+    def __new__(cls, normal_down, normal_down_concat, normal_up, normal_up_concat, 
+                normal_normal, normal_normal_concat, transformer_connections=None):
+        # Default transformer_connections if not provided (backward compatibility)
+        if transformer_connections is None:
+            transformer_connections = []
+        return super(Genotype, cls).__new__(cls, normal_down, normal_down_concat, 
+                                           normal_up, normal_up_concat, 
+                                           normal_normal, normal_normal_concat, 
+                                           transformer_connections)
+
+# Transformer connection pairs: (encoder_layer, decoder_layer)
+# Dynamic based on number of layers
+# Formula (1-based): (i, n-i+2) where i starts from 2, layer 1 stays as pure CNN
+# Formula (0-based): (i-1, n-i+1) where i starts from 2
+# Examples (using 1-based layer numbering):
+# - UNet3 (layers 1-3): layer 1 stays CNN, (2,3) - 1 connection
+# - UNet5 (layers 1-5): layer 1 stays CNN, (2,5), (3,4) - 2 connections  
+# - UNet7 (layers 1-7): layer 1 stays CNN, (2,7), (3,6), (4,5) - 3 connections
+# - UNet9 (layers 1-9): layer 1 stays CNN, (2,9), (3,8), (4,7), (5,6) - 4 connections
+# In code (0-based), for num_layers=7: (1,6), (2,5), (3,4)
+
+def get_transformer_connection_pairs(num_layers):
+    """
+    Generate transformer connection pairs based on number of layers
+    Formula (1-based): (i, n-i+2) where i starts from 2
+    Layer 1 (index 0) stays as pure CNN without transformer
+    
+    Args:
+        num_layers: Total number of layers in UNet (e.g., 7 for layers indexed 0-6)
+    Returns:
+        List of (encoder_layer, decoder_layer) tuples in 0-based indexing
+    """
+    pairs = []
+    max_depth = num_layers // 2
+    # i starts from 2 in 1-based, which is index 1 in 0-based
+    # Formula: 1-based (i, n-i+2) => 0-based (i-1, n-i+1)
+    for i in range(2, max_depth + 1):
+        encoder_layer = i - 1  # Convert to 0-based
+        decoder_layer = num_layers - i + 1  # Convert to 0-based (n-i+2-1)
+        pairs.append((encoder_layer, decoder_layer))
+    return pairs
+
+# Default for UNet7
+TransformerConnectionPairs = [
+    (2, 7),  # Layer 2 (encoder) to Layer 7 (decoder)
+    (3, 6),  # Layer 3 (encoder) to Layer 6 (decoder)
+    (4, 5),  # Layer 4 (encoder) to Layer 5 (decoder)
+]
 
 CellLinkDownPos = [
     'down_Dynamic_convOPS',

@@ -461,8 +461,7 @@ class ZeroOp(BaseOp):
         h //= self.stride
         w //= self.stride
         if x.is_cuda:
-            with torch.cuda.device(x.get_device()):
-                padding = torch.cuda.FloatTensor(n, c, h, w).fill_(0)
+            padding = torch.zeros(n, c, h, w, dtype=torch.float32, device=x.device)
         else:
             padding = torch.zeros(n, c, h, w)
         padding = torch.autograd.Variable(padding, requires_grad=False)

@@ -79,7 +79,6 @@ def get_models(args,switches_normal,switches_down,switches_up,switches_transform
         switches_normal=switches_normal,
         switches_down=switches_down,
         switches_up=switches_up,
-        switches_transformer=switches_transformer,
         early_fix_arch=args.early_fix_arch,
         gen_max_child_flag=args.gen_max_child_flag,
         random_sample=args.random_sample

@@ -61,17 +61,6 @@ class DeformableTransformer(nn.Module):
         spatial_shapes = []
         src_input = []
         #print("srcs",srcs.shape)
-        
-        # Debug: Check if inputs are empty
-        # print(f"Debug: srcs length: {len(srcs) if hasattr(srcs, '__len__') else 'Not a list'}")
-        # print(f"Debug: masks length: {len(masks) if hasattr(masks, '__len__') else 'Not a list'}")
-        # print(f"Debug: pos_embeds length: {len(pos_embeds) if hasattr(pos_embeds, '__len__') else 'Not a list'}")
-        
-        # Check if any input list is empty
-        if not srcs or not masks or not pos_embeds:
-            print("Warning: One or more input lists are empty, returning None")
-            return None
-            
         for lvl, (src, mask, pos_embed) in enumerate(zip(srcs, masks, pos_embeds)):
             #print("#####lv1####",lvl)
             bs, c, h, w = src.shape
@@ -93,12 +82,6 @@ class DeformableTransformer(nn.Module):
             src_flatten.append(src1)
             src_input.append(src)
             mask_flatten.append(mask)
-            
-        # Check if lists are empty before concatenating
-        if not src_flatten:
-            print("Warning: No valid inputs were processed, returning None")
-            return None
-            
         src_flatten = torch.cat(src_flatten, 1)
         #print("####src_flatten.shape######",src_flatten.shape)
         mask_flatten = torch.cat(mask_flatten, 1)

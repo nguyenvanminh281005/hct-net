@@ -1,59 +1,45 @@
 from collections import namedtuple
 import numpy as np
 
-# Updated Genotype to include transformer connections between encoder-decoder layers
-# Using defaults parameter to make transformer_connections optional for backward compatibility
+# Define Genotype with default value for transformer_connections
 class Genotype(namedtuple('Genotype', 'normal_down normal_down_concat normal_up normal_up_concat normal_normal normal_normal_concat transformer_connections')):
     __slots__ = ()
     
     def __new__(cls, normal_down, normal_down_concat, normal_up, normal_up_concat, 
-                normal_normal, normal_normal_concat, transformer_connections=None):
-        # Default transformer_connections if not provided (backward compatibility)
-        if transformer_connections is None:
-            transformer_connections = []
-        return super(Genotype, cls).__new__(cls, normal_down, normal_down_concat, 
-                                           normal_up, normal_up_concat, 
-                                           normal_normal, normal_normal_concat, 
-                                           transformer_connections)
+                normal_normal, normal_normal_concat, transformer_connections=[]):
+        return super(Genotype, cls).__new__(cls, normal_down, normal_down_concat, normal_up, 
+                                            normal_up_concat, normal_normal, normal_normal_concat, 
+                                            transformer_connections)
 
-# Transformer connection pairs: (encoder_layer, decoder_layer)
-# Dynamic based on number of layers
-# Formula (1-based): (i, n-i+2) where i starts from 2, layer 1 stays as pure CNN
-# Formula (0-based): (i-1, n-i+1) where i starts from 2
-# Examples (using 1-based layer numbering):
-# - UNet3 (layers 1-3): layer 1 stays CNN, (2,3) - 1 connection
-# - UNet5 (layers 1-5): layer 1 stays CNN, (2,5), (3,4) - 2 connections  
-# - UNet7 (layers 1-7): layer 1 stays CNN, (2,7), (3,6), (4,5) - 3 connections
-# - UNet9 (layers 1-9): layer 1 stays CNN, (2,9), (3,8), (4,7), (5,6) - 4 connections
-# In code (0-based), for num_layers=7: (1,6), (2,5), (3,4)
+# Helper function to create old genotypes without transformer_connections (kept for backward compat)
+def create_legacy_genotype(normal_down, normal_down_concat, normal_up, normal_up_concat, 
+                          normal_normal, normal_normal_concat):
+    """Create genotype with default empty transformer connections for backward compatibility"""
+    return Genotype(
+        normal_down=normal_down,
+        normal_down_concat=normal_down_concat,
+        normal_up=normal_up,
+        normal_up_concat=normal_up_concat,
+        normal_normal=normal_normal,
+        normal_normal_concat=normal_normal_concat,
+        transformer_connections=[]  # Default: no transformer connections
+    )
 
 def get_transformer_connection_pairs(num_layers):
     """
-    Generate transformer connection pairs based on number of layers
-    Formula (1-based): (i, n-i+2) where i starts from 2
-    Layer 1 (index 0) stays as pure CNN without transformer
-    
-    Args:
-        num_layers: Total number of layers in UNet (e.g., 7 for layers indexed 0-6)
-    Returns:
-        List of (encoder_layer, decoder_layer) tuples in 0-based indexing
+    Get transformer connection pairs for a given number of layers.
+    For UNet-like architecture with num_layers:
+    - Encoder: layers 1 to (num_layers-1)//2
+    - Decoder: layers (num_layers+1)//2 to num_layers-1
+    Returns list of (encoder_layer_idx, decoder_layer_idx) pairs
     """
+    num_connections = (num_layers - 1) // 2
     pairs = []
-    max_depth = num_layers // 2
-    # i starts from 2 in 1-based, which is index 1 in 0-based
-    # Formula: 1-based (i, n-i+2) => 0-based (i-1, n-i+1)
-    for i in range(2, max_depth + 1):
-        encoder_layer = i - 1  # Convert to 0-based
-        decoder_layer = num_layers - i + 1  # Convert to 0-based (n-i+2-1)
-        pairs.append((encoder_layer, decoder_layer))
+    for i in range(num_connections):
+        encoder_idx = i + 1  # Encoder layer index
+        decoder_idx = num_layers - 1 - i  # Corresponding decoder layer
+        pairs.append((encoder_idx, decoder_idx))
     return pairs
-
-# Default for UNet7
-TransformerConnectionPairs = [
-    (2, 7),  # Layer 2 (encoder) to Layer 7 (decoder)
-    (3, 6),  # Layer 3 (encoder) to Layer 6 (decoder)
-    (4, 5),  # Layer 4 (encoder) to Layer 5 (decoder)
-]
 
 CellLinkDownPos = [
     'down_Dynamic_convOPS',
@@ -85,44 +71,37 @@ CellPos = [
     'conv',
 ]
 
-# Transformer layer configurations for searchable NAS
-TransformerLayerConfigs = [
-    1,  # 1 layer
-    2,  # 2 layers  
-    3,  # 3 layers
-    4,  # 4 layers
-    6,  # 6 layers (original)
-    8,  # 8 layers
-    12, # 12 layers
-]
+ISIC_414 = create_legacy_genotype(normal_down=[('avg_pool', 1), ('identity', 0), ('dep_conv', 0), ('down_conv', 1), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 0), ('shuffle_conv', 1), ('conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_normal_concat=range(2, 6))
 
-ISIC_414 = Genotype(normal_down=[('avg_pool', 1), ('identity', 0), ('dep_conv', 0), ('down_conv', 1), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 0), ('shuffle_conv', 1), ('conv', 1), ('dep_conv', 0), ('conv', 2), ('conv', 3), ('shuffle_conv', 2), ('conv', 3)], normal_normal_concat=range(2, 6))
 
-promise_1 = Genotype(normal_down=[('cweight', 0), ('max_pool', 1), ('cweight', 0), ('down_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('Dynamic_convOPS', 1)], normal_normal_concat=range(2, 6))
 
-ISIC_1 = Genotype(normal_down=[('Dynamic_convOPS', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_down_concat=range(2, 6), normal_up=[('Dynamic_convOPS', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_up_concat=range(2, 6), normal_normal=[('Dynamic_convOPS', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('dil_conv', 1), ('shuffle_conv', 4)], normal_normal_concat=range(2, 6))
+promise_1 = create_legacy_genotype(normal_down=[('cweight', 0), ('max_pool', 1), ('cweight', 0), ('down_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('Dynamic_convOPS', 1)], normal_normal_concat=range(2, 6))
 
-transformer_312_final = Genotype(normal_down=[('dil_conv', 0), ('down_conv', 1), ('conv', 0), ('down_dil_conv', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('dil_conv', 0), ('conv', 0), ('up_cweight', 1), ('up_conv', 1), ('dil_conv', 3), ('shuffle_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('dil_conv', 0), ('conv', 0), ('Dynamic_convOPS', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
+ISIC_1 = create_legacy_genotype(normal_down=[('Dynamic_convOPS', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_down_concat=range(2, 6), normal_up=[('Dynamic_convOPS', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('shuffle_conv', 4), ('Dynamic_convOPS', 3)], normal_up_concat=range(2, 6), normal_normal=[('Dynamic_convOPS', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 3), ('dep_conv', 0), ('dil_conv', 1), ('shuffle_conv', 4)], normal_normal_concat=range(2, 6))
 
-transformer313=Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
+# Transformer-based genotypes with all connections enabled
+transformer_312_final = Genotype(normal_down=[('dil_conv', 0), ('down_conv', 1), ('conv', 0), ('down_dil_conv', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('dil_conv', 0), ('conv', 0), ('up_cweight', 1), ('up_conv', 1), ('dil_conv', 3), ('shuffle_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('dil_conv', 0), ('conv', 0), ('Dynamic_convOPS', 1), ('dil_conv', 3), ('shuffle_conv', 0), ('shuffle_conv', 4), ('dil_conv', 3)], normal_normal_concat=range(2, 6), transformer_connections=[0, 1, 2])  # All 3 connections enabled
+
+
+transformer313=Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 1)], normal_normal_concat=range(2, 6), transformer_connections=[0, 1, 2])
 #transformer
-transformer_net0106 = Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('up_dil_conv', 1), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
+transformer_net0106 = Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('up_dil_conv', 1), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 3)], normal_normal_concat=range(2, 6), transformer_connections=[0, 1, 2])
 
-transformer_net0107 = Genotype(normal_down=[('shuffle_conv', 0), ('down_dil_conv', 1), ('Dynamic_convOPS', 0), ('Dynamic_convOPS', 2), ('shuffle_conv', 3), ('identity', 0), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_down_concat=range(2, 6), normal_up=[('shuffle_conv', 0), ('up_cweight', 1), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('up_dil_conv', 1), ('shuffle_conv', 3), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('dep_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 3), ('identity', 0), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_normal_concat=range(2, 6))
-transformer_net0107_1 = Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('shuffle_conv', 0), ('up_dil_conv', 1), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
+transformer_net0107 = Genotype(normal_down=[('shuffle_conv', 0), ('down_dil_conv', 1), ('Dynamic_convOPS', 0), ('Dynamic_convOPS', 2), ('shuffle_conv', 3), ('identity', 0), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_down_concat=range(2, 6), normal_up=[('shuffle_conv', 0), ('up_cweight', 1), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('up_dil_conv', 1), ('shuffle_conv', 3), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('dep_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 3), ('identity', 0), ('dil_conv', 4), ('Dynamic_convOPS', 2)], normal_normal_concat=range(2, 6), transformer_connections=[0, 1, 2])
+transformer_net0107_1 = create_legacy_genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('shuffle_conv', 0), ('up_dil_conv', 1), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
 
-transformer_net0108 = Genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('shuffle_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('shuffle_conv', 1)], normal_normal_concat=range(2, 6))
+transformer_net0108 = create_legacy_genotype(normal_down=[('shuffle_conv', 0), ('down_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 2), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('shuffle_conv', 0), ('up_dil_conv', 1), ('Dynamic_convOPS', 0), ('dil_conv', 2), ('shuffle_conv', 3), ('dil_conv', 4), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('Dynamic_convOPS', 1), ('shuffle_conv', 1), ('Dynamic_convOPS', 0), ('shuffle_conv', 1), ('dil_conv', 2), ('dil_conv', 4), ('shuffle_conv', 1)], normal_normal_concat=range(2, 6))
 
-transformer_without_dynamiconv_0111 = Genotype(normal_down=[('shuffle_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('shuffle_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('shuffle_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
-transformer_without_dynamiconv_0112 = Genotype(normal_down=[('dep_conv', 0), ('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('dep_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('up_conv', 1), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('dep_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 1), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
-transformer_without_dynamiconv_0113 = Genotype(normal_down=[('shuffle_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('shuffle_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('shuffle_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
-transformer_without_dynamiconv_0115 = Genotype(normal_down=[('down_dep_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('dep_conv', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('dep_conv', 0), ('up_dep_conv', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('dep_conv', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
-transformer_without_dynamiconv_0120 = Genotype(normal_down=[('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_normal_concat=range(2, 6))
-transformer_without_dynamiconv_0120_70 =  Genotype(normal_down=[('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dep_conv', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0111 = create_legacy_genotype(normal_down=[('shuffle_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('shuffle_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('shuffle_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0112 = create_legacy_genotype(normal_down=[('dep_conv', 0), ('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('dep_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('up_conv', 1), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('dep_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 1), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0113 = create_legacy_genotype(normal_down=[('shuffle_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('shuffle_conv', 0), ('cweight', 0), ('up_dil_conv', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('shuffle_conv', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dil_conv', 3), ('dil_conv', 3), ('cweight', 0)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0115 = create_legacy_genotype(normal_down=[('down_dep_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('dep_conv', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('dep_conv', 0), ('up_dep_conv', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('dep_conv', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0120 = create_legacy_genotype(normal_down=[('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('cweight', 0), ('cweight', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dep_conv', 4)], normal_normal_concat=range(2, 6))
+transformer_without_dynamiconv_0120_70 = create_legacy_genotype(normal_down=[('down_dil_conv', 1), ('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dep_conv', 1), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2), ('cweight', 0), ('dep_conv', 3), ('cweight', 0), ('dil_conv', 3)], normal_normal_concat=range(2, 6))
 
-one_transformer_33 = Genotype(normal_down=[('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('cweight', 0), ('up_cweight', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 0), ('conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_normal_concat=range(2, 6))
+one_transformer_33 = create_legacy_genotype(normal_down=[('cweight', 0), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('cweight', 0), ('up_cweight', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('cweight', 0), ('conv', 1), ('cweight', 0), ('cweight', 2), ('cweight', 0), ('shuffle_conv', 2), ('cweight', 0), ('dep_conv', 3)], normal_normal_concat=range(2, 6))
 
-transformer_UTNet_0123 = Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_conv', 1), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('dil_conv', 0), ('up_dil_conv', 1), ('cweight', 0), ('up_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dep_conv', 1)], normal_up_concat=range(2, 6), normal_normal=[('dil_conv', 1), ('dil_conv', 0), ('cweight', 0), ('dep_conv', 1), ('cweight', 0), ('shuffle_conv', 3), ('cweight', 0), ('dep_conv', 2)], normal_normal_concat=range(2, 6))
+transformer_UTNet_0123 = create_legacy_genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('cweight', 0), ('down_conv', 1), ('down_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('dep_conv', 2)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('dil_conv', 0), ('up_dil_conv', 1), ('cweight', 0), ('up_dep_conv', 1), ('cweight', 0), ('cweight', 0), ('up_dep_conv', 1)], normal_up_concat=range(2, 6), normal_normal=[('dil_conv', 1), ('dil_conv', 0), ('cweight', 0), ('dep_conv', 1), ('cweight', 0), ('shuffle_conv', 3), ('cweight', 0), ('dep_conv', 2)], normal_normal_concat=range(2, 6))
 # CVC datasets
 # ValLoss:0.892 ValAcc:0.985  ValDice:0.913 ValJc:0.844
 # cvc final
@@ -146,8 +125,13 @@ stage1_deep = Genotype(normal_down=[('down_dil_conv', 1), ('dil_conv', 0), ('dow
 stage1_double = Genotype(normal_down=[('down_cweight', 1), ('cweight', 0), ('down_conv', 1), ('dep_conv', 2), ('down_dil_conv', 1), ('shuffle_conv', 0), ('down_cweight', 1), ('dil_conv', 2)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('cweight', 0), ('dep_conv', 2), ('up_dil_conv', 1), ('up_dil_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('dil_conv', 0)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('cweight', 0), ('identity', 1), ('dep_conv', 2), ('shuffle_conv', 0), ('conv', 3), ('dil_conv', 2), ('identity', 1)], normal_normal_concat=range(2, 6))
 #
 
+
 #chaos test
 nodouble_deep_init32_ep100=genotype = Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('max_pool', 1), ('dil_conv', 2), ('max_pool', 1), ('identity', 3), ('max_pool', 1), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dep_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('up_conv', 1), ('identity', 3), ('cweight', 2), ('up_dep_conv', 1), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('identity', 1), ('dil_conv', 2), ('dil_conv', 1), ('identity', 3), ('cweight', 2), ('conv', 3), ('dil_conv', 2)], normal_normal_concat=range(2, 6))
+
+
+
+
 
 # chaos datasets
 nodouble_deep_init32_ep100=genotype = Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('max_pool', 1), ('dil_conv', 2), ('max_pool', 1), ('identity', 3), ('max_pool', 1), ('conv', 3)], normal_down_concat=range(2, 6), normal_up=[('up_dep_conv', 1), ('shuffle_conv', 0), ('dil_conv', 2), ('up_conv', 1), ('identity', 3), ('cweight', 2), ('up_dep_conv', 1), ('conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('shuffle_conv', 0), ('identity', 1), ('dil_conv', 2), ('dil_conv', 1), ('identity', 3), ('cweight', 2), ('conv', 3), ('dil_conv', 2)], normal_normal_concat=range(2, 6))
@@ -157,10 +141,13 @@ stage1_nodouble_deep_ep36=Genotype(normal_down=[('max_pool', 1), ('dil_conv', 0)
 # seatch acc 0.848
 stage1_nodouble_deep_ep63=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('down_dep_conv', 1), ('identity', 0), ('conv', 0), ('down_conv', 1), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2,6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('up_dep_conv', 1), ('identity', 0), ('conv', 0), ('up_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('dil_conv', 0), ('identity', 0), ('identity', 1), ('conv', 0), ('identity', 1), ('identity', 0), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
 
+
 stage1_nodouble_deep_ep83=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('identity', 0), ('down_dep_conv', 1), ('down_cweight', 1), ('conv', 0), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2, 6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('identity', 0), ('up_dep_conv', 1), ('up_conv', 1), ('conv', 0), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('dil_conv', 0), ('identity', 1), ('identity', 0), ('identity', 1), ('conv', 0), ('identity', 0), ('dil_conv', 1)], normal_normal_concat=range(2, 6))
+
 
 # 0.854
 stage1_nodouble_deep_150awb= Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1), ('identity', 0), ('down_dep_conv', 1), ('dil_conv', 0), ('down_cweight', 1), ('down_dil_conv', 1), ('identity', 0)], normal_down_concat=range(2, 6), normal_up=[('dil_conv', 0), ('up_dep_conv', 1), ('identity', 0), ('up_dep_conv', 1), ('dil_conv', 0), ('up_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv',1), ('dil_conv', 0), ('identity', 1), ('identity', 0), ('dil_conv', 0), ('shuffle_conv', 1), ('identity', 0), ('dil_conv', 4)], normal_normal_concat=range(2, 6))
+
 
 stage1_double_deep_ep80= Genotype(normal_down=[('dil_conv', 0), ('avg_pool', 1), ('identity', 0), ('avg_pool', 1), ('avg_pool', 1), ('cweight', 2), ('avg_pool', 1), ('identity', 4)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_cweight', 1), ('identity', 0), ('up_cweight', 1), ('cweight', 2), ('cweight', 3), ('identity', 4), ('dil_conv', 0)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('identity', 0),('identity', 0), ('cweight', 2), ('cweight', 2), ('cweight', 3), ('cweight', 1), ('identity', 4)], normal_normal_concat=range(2, 6))
 
@@ -168,6 +155,11 @@ stage1_double_deep_ep80_ts=Genotype(normal_down=[('dil_conv', 0), ('max_pool', 1
 
 # chaos final
 stage0_double_deep_ep80_newim=Genotype(normal_down=[('down_dep_conv', 1), ('identity', 0), ('avg_pool', 1), ('cweight', 0), ('shuffle_conv', 2), ('identity', 0), ('conv', 4), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('identity', 0), ('up_dep_conv', 1), ('cweight', 0), ('up_dep_conv', 1), ('shuffle_conv', 2), ('identity', 0), ('conv', 4), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('identity', 0), ('cweight', 0), ('cweight', 2), ('identity', 1), ('shuffle_conv', 2), ('conv', 4), ('dep_conv', 3)], normal_normal_concat=range(2, 6))
+
+
+
+
+
 
 # isic test 
 # 0.934,0.888,0.808
@@ -179,6 +171,7 @@ stage1_layer9_110epoch_double_deep_final=Genotype(
         normal_normal=[('dep_conv', 1), ('cweight', 0), ('conv', 2), ('shuffle_conv', 0), ('dep_conv', 1), ('shuffle_conv', 3), ('conv', 3), ('dep_conv', 4)],
          normal_normal_concat=range(2, 6))
 
+
 # 0.932,0.885,0.804  final output
 stage1_layer9_110epoch_double_final=Genotype(normal_down=[('down_dil_conv', 1), ('shuffle_conv', 0), ('shuffle_conv', 0), ('down_cweight', 1), ('shuffle_conv', 3), ('down_conv', 1), ('down_conv', 1), ('conv', 3)],
          normal_down_concat=range(2, 6),
@@ -187,8 +180,11 @@ stage1_layer9_110epoch_double_final=Genotype(normal_down=[('down_dil_conv', 1), 
          normal_normal=[('shuffle_conv', 0), ('dil_conv', 1), ('shuffle_conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 3), ('shuffle_conv', 1), ('conv', 3), ('shuffle_conv', 2)],
          normal_normal_concat=range(2, 6))
 
+
+
 # 0.931 0.889 0.804
 stage1_layer9_110epoch_deep_final=Genotype(normal_down=[('down_conv', 1), ('dep_conv', 0), ('shuffle_conv', 2), ('down_cweight', 1), ('down_cweight', 1), ('identity', 3), ('down_cweight', 1), ('dep_conv', 4)], normal_down_concat=range(2, 6), normal_up=[('up_conv', 1), ('dep_conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 0), ('identity', 3), ('up_dil_conv', 1), ('up_conv', 1), ('dep_conv', 4)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 0), ('shuffle_conv', 1), ('shuffle_conv', 2), ('shuffle_conv', 0), ('identity', 3), ('identity', 1), ('identity', 1), ('dep_conv', 4)], normal_normal_concat=range(2, 6))
+
 
 # 0.920 0.874
 stage1_layer9_110epoch_final=Genotype(
@@ -197,6 +193,7 @@ stage1_layer9_110epoch_final=Genotype(
     normal_up=[('conv', 0), ('up_dil_conv', 1), ('shuffle_conv', 2), ('shuffle_conv', 0), ('up_dep_conv', 1), ('cweight', 3), ('conv', 3), ('shuffle_conv', 2)],
     normal_up_concat=range(2, 6),
     normal_normal=[('conv', 1), ('conv', 0), ('shuffle_conv', 2), ('shuffle_conv', 0), ('shuffle_conv', 1), ('cweight', 3), ('conv', 3), ('shuffle_conv', 2)], normal_normal_concat=range(2, 6))
+
 
 
 # mixuo and nomixuo test 
@@ -266,6 +263,9 @@ alpha1_layer9cellskip_double_deep_ep80_mixup=Genotype(normal_down=[('identity', 
 
 #ValAcc:0.9596  ValDice:0.8708 ValJc:0.7773
 alpha1_layer9scale_double_deep_ep80_mixup=Genotype(normal_down=[('conv', 0), ('max_pool', 1), ('cweight', 0), ('down_cweight', 1), ('cweight', 0), ('down_dep_conv', 1), ('identity', 0), ('max_pool', 1)], normal_down_concat=range(2, 6), normal_up=[('up_dil_conv', 1), ('conv', 0), ('up_cweight', 1), ('cweight', 0), ('up_cweight', 1), ('cweight', 0), ('up_cweight', 1), ('identity', 0)], normal_up_concat=range(2, 6), normal_normal=[('dep_conv', 1), ('conv', 0), ('cweight', 1), ('cweight', 0), ('cweight', 0), ('cweight', 1), ('identity', 0), ('identity', 1)], normal_normal_concat=range(2, 6))
+
+
+
 
 #ISIC2017 alpha=0.5
 alphaShare_dd_ep80_isic17_2mixup = Genotype(normal_down=[('max_pool', 1), ('cweight', 0), ('dep_conv', 2), ('avg_pool', 1), ('down_dep_conv', 1), ('cweight', 0), ('shuffle_conv', 2), ('dep_conv', 3)], normal_down_concat=range(2, 6), normal_up=[('cweight', 0), ('up_dep_conv', 1), ('dep_conv', 2), ('up_dep_conv', 1), ('cweight', 0), ('up_cweight', 1), ('shuffle_conv', 2), ('dep_conv', 3)], normal_up_concat=range(2, 6), normal_normal=[('identity', 1), ('cweight', 0), ('dep_conv', 2), ('cweight', 1), ('cweight', 0), ('dep_conv', 2), ('shuffle_conv', 2), ('dep_conv', 3)], normal_normal_concat=range(2, 6))

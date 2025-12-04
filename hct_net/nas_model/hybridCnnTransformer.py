@@ -292,8 +292,14 @@ class hybridCnnTrans(nn.Module):
         
         #################################### Transformer连接参数的初始化 ##########################################
         # Architecture parameters for transformer connections: [num_connections, 2] (on/off for each connection)
-        self.alphas_transformer_connections = nn.Parameter(1e-3 * torch.randn(self.num_transformer_connections, 2))
+        # Initialize with bias towards OFF to encourage sparse transformer usage
+        self.alphas_transformer_connections = nn.Parameter(torch.zeros(self.num_transformer_connections, 2))
+        # Bias initialization: [:, 0] = 0.0 (OFF), [:, 1] = -2.0 (ON biased towards off)
+        # This gives initial probability: P(ON) ≈ 12%, P(OFF) ≈ 88%
+        self.alphas_transformer_connections.data[:, 0] = 0.0   # OFF logit
+        self.alphas_transformer_connections.data[:, 1] = -2.0  # ON logit (biased towards sparse usage)
         print(f"Initialized alphas_transformer_connections with shape: {self.alphas_transformer_connections.shape}")
+        print(f"Initial transformer ON probabilities: {F.softmax(self.alphas_transformer_connections, dim=-1)[:, 1].tolist()}")
         # print(" self.alphas_network:",self.alphas_network)
 
         # setup alphas list
@@ -551,7 +557,8 @@ class hybridCnnTrans(nn.Module):
             self.weights_down.grad = torch.zeros_like(self.weights_down)
             self.network_weight.grad = torch.zeros_like(self.network_weight)
 
-            (error_loss + loss_alpha).backward()
+            # Use retain_graph=True to allow backward to be called again later
+            (error_loss + loss_alpha).backward(retain_graph=True)
 
             # print("self.weights_normal.grad",self.weights_down.grad)
             self.cell_up_reward = self.weights_up.grad.data.sum(dim=1)
@@ -620,6 +627,11 @@ class hybridCnnTrans(nn.Module):
         weight_normal = F.softmax(self.alphas_normal, dim=-1).data.cpu().numpy()
         weight_down = F.softmax(self.alphas_down, dim=-1).data.cpu().numpy()
         weight_up = F.softmax(self.alphas_up, dim=-1).data.cpu().numpy()
+        # Extract transformer connection probabilities (if available)
+        if hasattr(self, 'alphas_transformer_connections'):
+            weight_transformer = F.softmax(self.alphas_transformer_connections, dim=-1).data.cpu().numpy()
+        else:
+            weight_transformer = None
         num_mixops = len(weight_normal)
         assert num_mixops == 14
         assert len(self.switches_normal) == num_mixops and len(self.switches_down) == num_mixops and len(
@@ -641,10 +653,23 @@ class hybridCnnTrans(nn.Module):
                                                    self.meta_node_num)
 
         concat = range(2, self.meta_node_num + 2)
+        # Determine transformer connections from probabilities (index 1 == ON probability)
+        transformer_connections = []
+        if weight_transformer is not None:
+            for i in range(self.num_transformer_connections):
+                try:
+                    prob_on = float(weight_transformer[i, 1])
+                except Exception:
+                    prob_on = 0.0
+                # Consider ON if probability > 0.5 (can be adjusted later)
+                if prob_on > 0.5:
+                    transformer_connections.append(i)
+
         geno_type = Genotype(
             normal_down=normal_down_gen, normal_down_concat=concat,
             normal_up=normal_up_gen, normal_up_concat=concat,
             normal_normal=normal_normal_gen, normal_normal_concat=concat,
+            transformer_connections=transformer_connections,
         )
         return geno_type
 

@@ -18,31 +18,62 @@ class CVCSegmentation(Dataset):
                  split='train',
                  ):
         """
-        :param base_dir: path to VOC dataset directory
-        :param split: train/val
+        :param base_dir: path to CVC dataset directory
+        :param split: train/valid
         :param transform: transform to apply     CXHXW   1XHXW
         """
         super(CVCSegmentation, self).__init__()
         self.flag=split
         self.args = args
         self._base_dir = base_dir
-        self._image_dir = os.path.join(self._base_dir, self.flag)
-        self._cat_dir = os.path.join(self._base_dir, self.flag+"_GT")
+        
+        # CVC dataset structure: cvc/PNG/Original and cvc/PNG/Ground Truth
+        # Use PNG by default, can change to TIF if needed
+        image_format = 'PNG'  # Change to 'TIF' if you want to use TIFF format
+        self._image_dir = os.path.join(self._base_dir, image_format, 'Original')
+        self._cat_dir = os.path.join(self._base_dir, image_format, 'Ground Truth')
+        
+        # Check if directories exist
+        if not os.path.exists(self._image_dir):
+            raise ValueError(f"Image directory not found: {self._image_dir}")
+        if not os.path.exists(self._cat_dir):
+            raise ValueError(f"Ground truth directory not found: {self._cat_dir}")
 
         self.filenames = os.listdir(self._image_dir)
         self.data_list = []
         self.gt_list = []
         self.img_ids=[]
-        self.filenames=sorted(self.filenames,key=lambda x: int(x.split('.')[0]))
+        
+        # Sort filenames by numeric value (1.png, 2.png, etc.)
+        import re
+        def extract_number(filename):
+            numbers = re.findall(r'\d+', filename.split('.')[0])
+            return int(numbers[0]) if numbers else 0
+        
+        self.filenames = sorted(self.filenames, key=extract_number)
+        
+        # Split dataset into train/valid (80/20 split by default)
+        total_images = len(self.filenames)
+        train_size = int(total_images * 0.8)
+        
+        if split == 'train':
+            self.filenames = self.filenames[:train_size]
+        else:  # valid
+            self.filenames = self.filenames[train_size:]
+        
         for filename in self.filenames:
             index_name = filename.split(".")[0]
-            self.data_list.append(os.path.join(self._image_dir,filename))
-            self.gt_list.append(os.path.join(self._cat_dir,filename))
-            self.img_ids.append(index_name)
-            assert os.path.splitext(filename)[-1]=='.tif'
-        assert (len(self.data_list) == len(self.gt_list))
-        #self.data_list=[os.path.join(self._image_dir,i) for i in self.data_list]
-        #self.gt_list=[os.path.join(self._cat_dir,i) for i in self.gt_list]
+            img_path = os.path.join(self._image_dir, filename)
+            gt_path = os.path.join(self._cat_dir, filename)
+            
+            # Check if both image and ground truth exist
+            if os.path.exists(img_path) and os.path.exists(gt_path):
+                self.data_list.append(img_path)
+                self.gt_list.append(gt_path)
+                self.img_ids.append(index_name)
+        
+        assert (len(self.data_list) == len(self.gt_list)), "Mismatch between images and ground truth"
+        
         # Display stats
         print('Number of images in {}: {:d}'.format(split, len(self.data_list)))
 
@@ -62,17 +93,25 @@ class CVCSegmentation(Dataset):
             return image,mask,index_name
 
     def _make_img_gt_point_pair(self, index):
-        # _img=cv2.imread(self.data_list[index],cv2.IMREAD_COLOR)
-        # _img=_img[:,:,[2,1,0]]
-        # _img=Image.fromarray(_img).convert("RGB")
-        _img=tiff.imread(self.data_list[index])
-        _img=Image.fromarray(_img).convert("RGB")
+        # Load image - support both PNG and TIF formats
+        img_path = self.data_list[index]
+        if img_path.endswith('.tif'):
+            _img = tiff.imread(img_path)
+            _img = Image.fromarray(_img).convert("RGB")
+        else:  # PNG or other formats
+            _img = Image.open(img_path).convert("RGB")
+        
+        # Load ground truth mask
         _target = Image.open(self.gt_list[index])
-
+        
+        # Convert to grayscale if needed
+        if _target.mode != 'L':
+            _target = _target.convert('L')
+        
+        # Normalize to 0-1 range
         _target = (np.asarray(_target) / 255).astype(np.float32)
         _target = Image.fromarray(_target)
-        # _target=(np.asarray(_target)/255).astype(np.float32)
-        # _target=Image.fromarray(_target)
+        
         return _img, _target
 
 

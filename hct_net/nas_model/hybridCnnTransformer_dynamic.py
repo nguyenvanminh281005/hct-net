@@ -317,8 +317,10 @@ class hybridCnnTransDynamic(nn.Module):
                     outputs.append(out)
         
         # Handle gradient computation for architecture search
-        if not self.random_sample and self.training and not self.gen_max_child_flag and loss_alpha is not None:
-            self._compute_architecture_gradients(outputs, target, criterion, loss_alpha)
+        # DISABLED: We handle architecture gradients externally in the training loop
+        # to support Pareto multi-objective optimization
+        # if not self.random_sample and self.training and not self.gen_max_child_flag and loss_alpha is not None:
+        #     self._compute_architecture_gradients(outputs, target, criterion, loss_alpha)
         
         return outputs if len(outputs) > 0 else [F.interpolate(features[0], size=(h, w), mode='bilinear', align_corners=False)]
     

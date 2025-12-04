@@ -60,7 +60,6 @@ CellLinkUpPos = [
 ]
 
 CellPos = [
-
     'none',
     'Dynamic_convOPS',
     'identity',

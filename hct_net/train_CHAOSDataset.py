@@ -283,11 +283,11 @@ def main(args):
             }
 
             logger.info("epoch:{} best:{} max_value:{}".format(epoch, is_best, max_value))
-            if not is_best:
-                torch.save(state, os.path.join(save_model_path, "checkpoint.pth.tar"))
-            else:
-                torch.save(state, os.path.join(save_model_path, "checkpoint.pth.tar"))
-                torch.save(state, os.path.join(save_model_path, "model_best.pth.tar"))
+            # if not is_best:
+            #     torch.save(state, os.path.join(save_model_path, "checkpoint.pth.tar"))
+            # else:
+            #     torch.save(state, os.path.join(save_model_path, "checkpoint.pth.tar"))
+            #     torch.save(state, os.path.join(save_model_path, "model_best.pth.tar"))
 
         # one stage end, we should change the operations num (divided 2)
     weight_down = F.softmax(model.arch_parameters()[0], dim=-1).data.cpu().numpy()

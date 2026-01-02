@@ -13,6 +13,32 @@ from hct_net.operations import *
 from hct_net.nas_model.Kp_Trans.position_encoding import build_position_encoding
 from hct_net.nas_model.Kp_Trans.DeformableTrans import DeformableTransformer
 
+# Transformer configuration choices for NAS
+TRANSFORMER_CONFIG_CHOICES = [
+    {'d_model': 32, 'n_head': 2, 'expansion': 2, 'd_ff': 64},
+    {'d_model': 64, 'n_head': 4, 'expansion': 4, 'd_ff': 256},
+    {'d_model': 128, 'n_head': 4, 'expansion': 4, 'd_ff': 512},
+    {'d_model': 256, 'n_head': 8, 'expansion': 4, 'd_ff': 1024},
+]
+NUM_TRANSFORMER_CONFIGS = len(TRANSFORMER_CONFIG_CHOICES)
+
+def calculate_transformer_complexity(config, seq_len=256):
+    """Calculate FLOPs and parameters for a transformer configuration"""
+    d_model = config['d_model']
+    d_ff = config['d_ff']
+    n_head = config['n_head']
+    
+    # Simplified calculation
+    attention_flops = 2 * seq_len * seq_len * d_model
+    ffn_flops = 2 * seq_len * d_model * d_ff
+    total_flops = (attention_flops + ffn_flops) * 6  # 6 encoder layers
+    
+    attention_params = 4 * d_model * d_model  # Q, K, V, O projections
+    ffn_params = 2 * d_model * d_ff
+    total_params = (attention_params + ffn_params) * 6
+    
+    return total_flops, total_params
+
 
 class hybridCnnTransDynamic(nn.Module):
     """
@@ -174,35 +200,31 @@ class hybridCnnTransDynamic(nn.Module):
         return possible
     
     def _build_transformers(self):
-        """Build transformer blocks dynamically based on number of connections"""
-        transformer_configs = [
-            {'hidden_dim': 64, 'd_model': 64, 'dim_feedforward': 256},
-            {'hidden_dim': 128, 'd_model': 128, 'dim_feedforward': 512},
-            {'hidden_dim': 256, 'd_model': 256, 'dim_feedforward': 1024},
-            {'hidden_dim': 512, 'd_model': 512, 'dim_feedforward': 2048},
-        ]
+        """Build transformer blocks dynamically with searchable configurations"""
+        # Use max configuration as template to contain all weights
+        max_config = max(TRANSFORMER_CONFIG_CHOICES, key=lambda c: c['d_model'])
         
         for i in range(self.num_transformer_connections):
-            config = transformer_configs[min(i, len(transformer_configs) - 1)]
-            
-            # Position embedding
-            pos_embed = build_position_encoding(mode='v2', hidden_dim=config['hidden_dim'])
+            # Position embedding - can be resized dynamically
+            pos_embed = build_position_encoding(mode='v2', hidden_dim=max_config['d_model'])
             self.position_embeds.append(pos_embed)
             
-            # Transformer
+            # Transformer with max configuration
             trans = DeformableTransformer(
-                d_model=config['d_model'], 
-                dim_feedforward=config['dim_feedforward'], 
+                d_model=max_config['d_model'], 
+                dim_feedforward=max_config['d_ff'], 
                 dropout=0.1, 
                 activation='gelu',
                 num_feature_levels=1, 
-                nhead=4, 
+                nhead=max_config['n_head'], 
                 num_encoder_layers=6,
                 enc_n_points=4
             )
             self.transformer_blocks.append(trans)
         
-        print(f"Created {len(self.transformer_blocks)} transformer blocks")
+        print(f"Created {len(self.transformer_blocks)} transformer blocks with max config")
+        print(f"  Max d_model={max_config['d_model']}, n_head={max_config['n_head']}")
+        print(f"  Actual config will be selected via alphas_transformer_configs during forward pass")
     
     def _init_arch_parameters(self):
         """Initialize architecture parameters for NAS"""
@@ -224,6 +246,13 @@ class hybridCnnTransDynamic(nn.Module):
         self.alphas_transformer_connections = nn.Parameter(1e-3 * torch.randn(self.num_transformer_connections, 2))
         print(f"Initialized alphas_transformer_connections with shape: {self.alphas_transformer_connections.shape}")
         
+        # Transformer configuration parameters: [num_connections, NUM_TRANSFORMER_CONFIGS]
+        self.alphas_transformer_configs = nn.Parameter(
+            1e-3 * torch.randn(self.num_transformer_connections, NUM_TRANSFORMER_CONFIGS)
+        )
+        print(f"Initialized alphas_transformer_configs with shape: {self.alphas_transformer_configs.shape}")
+        print(f"Each connection can choose from {NUM_TRANSFORMER_CONFIGS} configurations")
+        
         # Setup alphas list
         self._alphas = []
         for n, p in self.named_parameters():
@@ -236,6 +265,7 @@ class hybridCnnTransDynamic(nn.Module):
             self.alphas_normal,
             self.alphas_network,
             self.alphas_transformer_connections,
+            self.alphas_transformer_configs,
         ]
     
     def forward(self, input, target, criterion):
@@ -324,8 +354,49 @@ class hybridCnnTransDynamic(nn.Module):
         
         return outputs if len(outputs) > 0 else [F.interpolate(features[0], size=(h, w), mode='bilinear', align_corners=False)]
     
+    def get_selected_transformer_config(self, connection_idx):
+        """
+        Get the selected transformer configuration for a specific connection
+        
+        Args:
+            connection_idx: Index of the transformer connection
+        
+        Returns:
+            config_dict: Selected configuration with d_model, n_head, expansion, d_ff
+            config_idx: Index of selected configuration
+        """
+        if self.gen_max_child_flag:
+            # During inference: use argmax
+            config_idx = torch.argmax(self.alphas_transformer_configs[connection_idx]).item()
+        else:
+            # During training: sample from distribution
+            config_probs = F.softmax(self.alphas_transformer_configs[connection_idx], dim=-1)
+            if self.training:
+                # Gumbel-Softmax for differentiable sampling
+                config_idx = F.gumbel_softmax(self.alphas_transformer_configs[connection_idx], 
+                                             tau=1.0, hard=True).argmax().item()
+            else:
+                config_idx = torch.argmax(config_probs).item()
+        
+        return TRANSFORMER_CONFIG_CHOICES[config_idx], config_idx
+    
     def _apply_transformer(self, feature, trans_idx):
-        """Apply transformer to feature map"""
+        """Apply transformer to feature map with selected configuration"""
+        # Get selected configuration
+        config, config_idx = self.get_selected_transformer_config(trans_idx)
+        
+        B, C, H, W = feature.shape
+        
+        # Adjust features to match selected d_model if needed
+        if C != config['d_model']:
+            # Project to selected d_model
+            if not hasattr(self, f'proj_{trans_idx}_{config_idx}'):
+                proj = nn.Conv2d(C, config['d_model'], 1).to(feature.device)
+                setattr(self, f'proj_{trans_idx}_{config_idx}', proj)
+            else:
+                proj = getattr(self, f'proj_{trans_idx}_{config_idx}')
+            feature = proj(feature)
+        
         x_fea = [feature]
         x_posemb = [self.position_embeds[trans_idx](feature)]
         masks = [torch.zeros((feature.shape[0], feature.shape[2], feature.shape[3]), 
@@ -334,9 +405,17 @@ class hybridCnnTransDynamic(nn.Module):
         x_trans = self.transformer_blocks[trans_idx](x_fea, masks, x_posemb)
         
         # Reshape back to feature map
-        # Calculate output size based on feature dimensions
         output_size = feature.shape[0] * feature.shape[2] * feature.shape[3]
         trans_out = x_trans[:, :output_size, :].transpose(-1, -2).view(feature.shape)
+        
+        # Project back to original channels if needed
+        if trans_out.shape[1] != C:
+            if not hasattr(self, f'proj_back_{trans_idx}_{config_idx}'):
+                proj_back = nn.Conv2d(config['d_model'], C, 1).to(feature.device)
+                setattr(self, f'proj_back_{trans_idx}_{config_idx}', proj_back)
+            else:
+                proj_back = getattr(self, f'proj_back_{trans_idx}_{config_idx}')
+            trans_out = proj_back(trans_out)
         
         return trans_out
     
@@ -365,13 +444,21 @@ class hybridCnnTransDynamic(nn.Module):
         loss_alpha_network = torch.log((self.network_weight * F.softmax(self.network_weight, dim=-1)).sum(-1)).sum()
         loss_alpha_transformer = torch.log((self.transformer_weights * F.softmax(self.alphas_transformer_connections, dim=-1)).sum(-1)).sum()
         
+        # Add transformer config loss
+        if hasattr(self, 'alphas_transformer_configs'):
+            config_weights = F.softmax(self.alphas_transformer_configs, dim=-1)
+            loss_alpha_transformer_config = torch.log(config_weights.max(dim=-1)[0]).sum()
+        else:
+            loss_alpha_transformer_config = 0.0
+        
         self.weights_normal.requires_grad_()
         self.weights_up.requires_grad_()
         self.weights_down.requires_grad_()
         self.network_weight.requires_grad_()
         self.transformer_weights.requires_grad_()
         
-        return (loss_alpha_normal + loss_alpha_up + loss_alpha_down + loss_alpha_network + loss_alpha_transformer).sum()
+        return (loss_alpha_normal + loss_alpha_up + loss_alpha_down + loss_alpha_network + 
+                loss_alpha_transformer + loss_alpha_transformer_config).sum()
     
     def _compute_architecture_gradients(self, preds, target, criterion, loss_alpha):
         """Compute gradients for architecture parameters"""
@@ -408,6 +495,36 @@ class hybridCnnTransDynamic(nn.Module):
         m = torch.distributions.one_hot_categorical.OneHotCategorical(probs=F.softmax(log_alpha, dim=-1))
         return m.sample()
     
+    def get_current_complexity(self):
+        """Calculate expected complexity of current architecture"""
+        if not hasattr(self, 'alphas_transformer_configs'):
+            return 0.0, 0.0
+        
+        config_probs = F.softmax(self.alphas_transformer_configs, dim=-1)
+        conn_probs = F.softmax(self.alphas_transformer_connections, dim=-1)
+        
+        total_flops = 0.0
+        total_params = 0.0
+        
+        for conn_idx in range(self.num_transformer_connections):
+            # Expected complexity for this connection
+            expected_flops = 0.0
+            expected_params = 0.0
+            
+            for config_idx, prob in enumerate(config_probs[conn_idx]):
+                complexity_info = calculate_transformer_complexity(
+                    TRANSFORMER_CONFIG_CHOICES[config_idx]
+                )
+                expected_flops += prob.item() * complexity_info[0]
+                expected_params += prob.item() * complexity_info[1]
+            
+            # Weight by connection on/off probability
+            prob_on = conn_probs[conn_idx, 1].item()
+            total_flops += expected_flops * prob_on
+            total_params += expected_params * prob_on
+        
+        return total_flops, total_params
+    
     def genotype(self):
         """Extract final architecture"""
         weight_normal = F.softmax(self.alphas_normal, dim=-1).data.cpu().numpy()
@@ -415,11 +532,37 @@ class hybridCnnTransDynamic(nn.Module):
         weight_up = F.softmax(self.alphas_up, dim=-1).data.cpu().numpy()
         weight_transformer = F.softmax(self.alphas_transformer_connections, dim=-1).data.cpu().numpy()
         
-        # Get transformer connections (those with "on" probability > 0.5)
+        # Get transformer connections and configurations
         transformer_connections = []
-        for i in range(self.num_transformer_connections):
-            if weight_transformer[i, 1] > 0.5:  # Index 1 is "on"
-                transformer_connections.append(i)
+        transformer_configs_selected = []
+        
+        if hasattr(self, 'alphas_transformer_configs'):
+            config_probs = F.softmax(self.alphas_transformer_configs, dim=-1).data.cpu().numpy()
+            
+            for i in range(self.num_transformer_connections):
+                is_on = weight_transformer[i, 1] > 0.5  # Index 1 is "on"
+                if is_on:
+                    transformer_connections.append(i)
+                
+                # Get selected config
+                config_idx = np.argmax(config_probs[i])
+                config = TRANSFORMER_CONFIG_CHOICES[config_idx]
+                
+                transformer_configs_selected.append({
+                    'connection_idx': i,
+                    'is_on': is_on,
+                    'on_prob': float(weight_transformer[i, 1]),
+                    'config_idx': int(config_idx),
+                    'd_model': config['d_model'],
+                    'n_head': config['n_head'],
+                    'expansion': config['expansion'],
+                    'd_ff': config['d_ff'],
+                })
+        else:
+            # Fallback for old models without config search
+            for i in range(self.num_transformer_connections):
+                if weight_transformer[i, 1] > 0.5:
+                    transformer_connections.append(i)
         
         # Parse cell structures
         normal_down_gen = self.normal_downup_parser(weight_normal.copy(), weight_down.copy(), 
@@ -439,6 +582,7 @@ class hybridCnnTransDynamic(nn.Module):
             normal_up=normal_up_gen, normal_up_concat=concat,
             normal_normal=normal_normal_gen, normal_normal_concat=concat,
             transformer_connections=transformer_connections,
+            transformer_configs=transformer_configs_selected if hasattr(self, 'alphas_transformer_configs') else None,
         )
         return geno_type
     
@@ -518,23 +662,29 @@ class hybridCnnTransDynamic(nn.Module):
         self.alphas_network = alphas_dict['alphas_network']
         if 'alphas_transformer_connections' in alphas_dict:
             self.alphas_transformer_connections = alphas_dict['alphas_transformer_connections']
+        if 'alphas_transformer_configs' in alphas_dict:
+            self.alphas_transformer_configs = alphas_dict['alphas_transformer_configs']
         self._arch_parameters = [
             self.alphas_down,
             self.alphas_up,
             self.alphas_normal,
             self.alphas_network,
             self.alphas_transformer_connections,
+            self.alphas_transformer_configs,
         ]
     
     def alphas_dict(self):
         """Return architecture parameters as dictionary"""
-        return {
+        result = {
             'alphas_down': self.alphas_down,
             'alphas_normal': self.alphas_normal,
             'alphas_up': self.alphas_up,
             'alphas_network': self.alphas_network,
             'alphas_transformer_connections': self.alphas_transformer_connections,
         }
+        if hasattr(self, 'alphas_transformer_configs'):
+            result['alphas_transformer_configs'] = self.alphas_transformer_configs
+        return result
     
     def arch_parameters(self):
         """Return architecture parameters"""

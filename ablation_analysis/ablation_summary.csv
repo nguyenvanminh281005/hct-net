@@ -1,0 +1,9 @@
+Configuration,Dice,Δ Dice,Jaccard,Δ Jaccard,Transformer,Complexity,Entropy
+all,0.0000,+0.0000,0.0000,+0.0000,✓,✓,✓
+no_transformer,0.0000,+0.0000,0.0000,+0.0000,✗,✓,✓
+no_complexity,0.0000,+0.0000,0.0000,+0.0000,✓,✗,✓
+no_entropy,0.0000,+0.0000,0.0000,+0.0000,✓,✓,✗
+only_transformer,0.0000,+0.0000,0.0000,+0.0000,✓,✗,✗
+only_complexity,0.0000,+0.0000,0.0000,+0.0000,✗,✓,✗
+only_entropy,0.0000,+0.0000,0.0000,+0.0000,✗,✗,✓
+none,0.0000,+0.0000,0.0000,+0.0000,✗,✗,✗
